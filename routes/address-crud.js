@@ -149,7 +149,7 @@ router.post('/add-address', protect, async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: 'Address added successfully',
-      store_code: store_code.trim(),
+      store_code: (store_code || '').trim(),
       project_code: project_code,
       data: addressData
     });
@@ -295,7 +295,7 @@ router.put('/update-address/:id', protect, async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Address updated successfully',
-      store_code: store_code.trim(),
+      store_code: (store_code || '').trim(),
       project_code: project_code,
       data: addressData
     });
@@ -353,7 +353,7 @@ router.delete('/delete-address/:id', protect, async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Address deleted successfully',
-      store_code: store_code.trim(),
+      store_code: (store_code || '').trim(),
       project_code: project_code,
       deleted_address_id: address.idaddress_book
     });
@@ -394,7 +394,7 @@ router.post('/get-addresses', protect, async (req, res, next) => {
         success: true,
         count: 0,
         message: `No addresses found for mobile number: ${userMobile}`,
-        store_code: store_code.trim(),
+        store_code: (store_code || '').trim(),
         project_code: project_code,
         mobile_number: userMobile,
         data: []
@@ -422,7 +422,7 @@ router.post('/get-addresses', protect, async (req, res, next) => {
       success: true,
       count: addressesData.length,
       message: `Found ${addressesData.length} address(es) for mobile number: ${userMobile}`,
-      store_code: store_code.trim(),
+      store_code: (store_code || '').trim(),
       project_code: project_code,
       mobile_number: userMobile,
       data: addressesData

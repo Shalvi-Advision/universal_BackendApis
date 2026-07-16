@@ -1,5 +1,22 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { getTenantDb, DEFAULT_DB_NAME } = require('../config/database');
+
+// Resolve the user for a token. Regular customers live in the current
+// tenant's DB. Admin accounts live in the default (admin home) DB and may
+// operate on any tenant, so fall back there — but only for admins, keeping
+// customer identities strictly tenant-scoped.
+const findUserById = async (id) => {
+  const user = await User.findById(id);
+  if (user) {
+    return user;
+  }
+
+  const homeDb = getTenantDb(DEFAULT_DB_NAME);
+  const HomeUser = homeDb.models.User;
+  const homeUser = HomeUser ? await HomeUser.findById(id) : null;
+  return homeUser && homeUser.role === 'admin' ? homeUser : null;
+};
 
 // Protect routes - verify JWT token
 const protect = async (req, res, next) => {
@@ -29,7 +46,7 @@ const protect = async (req, res, next) => {
       );
 
       // Get user from token
-      const user = await User.findById(decoded.id);
+      const user = await findUserById(decoded.id);
 
       if (!user) {
         return res.status(401).json({
@@ -96,7 +113,7 @@ const optionalAuth = async (req, res, next) => {
           process.env.JWT_SECRET || 'your-secret-key'
         );
 
-        const user = await User.findById(decoded.id);
+        const user = await findUserById(decoded.id);
 
         if (user && user.isVerified) {
           req.user = user;

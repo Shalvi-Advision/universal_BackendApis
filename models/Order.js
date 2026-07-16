@@ -229,6 +229,13 @@ const orderSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  cancel_reason: {
+    type: String,
+    trim: true
+  },
+  cancelled_at: {
+    type: Date
+  },
   estimated_delivery_date: {
     type: Date
   },

@@ -75,6 +75,7 @@ const razorpayRoutes = require('./routes/razorpay');
 const notificationRoutes = require('./routes/notifications');
 const offerRoutes = require('./routes/offers');
 const projectConfigRoutes = require('./routes/project-config');
+const contentRoutes = require('./routes/content');
 const projectsRoutes = require('./routes/projects');
 
 const app = express();
@@ -248,6 +249,7 @@ app.use('/api', tenantResolver);
 
 // API routes
 app.use('/api/project-config', projectConfigRoutes);
+app.use('/api/content', contentRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api/auth', authLimiter, authRoutes); // Apply stricter rate limiting to auth routes
 app.use('/api/products', productRoutes);

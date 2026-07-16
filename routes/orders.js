@@ -532,6 +532,60 @@ router.get('/:orderNumber', protect, async (req, res, next) => {
 });
 
 /**
+ * @route   POST /api/orders/:orderNumber/cancel
+ * @desc    Cancel own order (only before it is being prepared/shipped)
+ * @access  Private (requires JWT token)
+ */
+router.post('/:orderNumber/cancel', protect, async (req, res, next) => {
+  try {
+    const { orderNumber } = req.params;
+    const { cancel_reason } = req.body;
+
+    const order = await Order.findOne({
+      order_number: orderNumber,
+      mobile_no: req.user.mobile
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    const CANCELLABLE_STATUSES = ['placed', 'confirmed'];
+    if (!CANCELLABLE_STATUSES.includes(order.order_status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Order cannot be cancelled once it is ${order.order_status}. Please contact support.`
+      });
+    }
+
+    order.order_status = 'cancelled';
+    order.cancelled_at = new Date();
+    order.last_updated_at = new Date();
+    if (cancel_reason && String(cancel_reason).trim()) {
+      order.cancel_reason = String(cancel_reason).trim();
+    }
+    await order.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Order cancelled successfully',
+      order: {
+        order_number: order.order_number,
+        order_status: order.order_status,
+        cancelled_at: order.cancelled_at,
+        cancel_reason: order.cancel_reason
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * @route   GET /api/orders
  * @desc    Get all orders (for admin/testing purposes)
  * @access  Public

@@ -39,6 +39,12 @@ const projectSchema = new mongoose.Schema(
       contact_phone: { type: String, default: '' },
       currency: { type: String, default: 'INR' },
       razorpay_key_id: { type: String, default: '' },
+      // Mobile app force-update policy (consumed by the Flutter app at launch).
+      min_app_version: { type: String, default: '' },
+      latest_app_version: { type: String, default: '' },
+      android_store_url: { type: String, default: '' },
+      ios_store_url: { type: String, default: '' },
+      force_update_message: { type: String, default: '' },
     },
     // Server-side only credentials (never returned by public endpoints).
     secrets: {

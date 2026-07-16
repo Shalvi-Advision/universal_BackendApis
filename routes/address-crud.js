@@ -30,12 +30,7 @@ router.post('/add-address', protect, async (req, res, next) => {
     } = req.body;
 
     // Validate required fields
-    if (!store_code || store_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'store_code is required'
-      });
-    }
+    // store_code is accepted but not required — addresses are per-customer
 
     if (!project_code || project_code.trim() === '') {
       return res.status(400).json({
@@ -190,12 +185,7 @@ router.put('/update-address/:id', protect, async (req, res, next) => {
     } = req.body;
 
     // Validate required fields
-    if (!store_code || store_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'store_code is required'
-      });
-    }
+    // store_code is accepted but not required — addresses are per-customer
 
     if (!project_code || project_code.trim() === '') {
       return res.status(400).json({
@@ -327,12 +317,7 @@ router.delete('/delete-address/:id', protect, async (req, res, next) => {
     const { store_code, project_code } = req.body;
 
     // Validate required fields
-    if (!store_code || store_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'store_code is required'
-      });
-    }
+    // store_code is accepted but not required — addresses are per-customer
 
     if (!project_code || project_code.trim() === '') {
       return res.status(400).json({
@@ -389,12 +374,7 @@ router.post('/get-addresses', protect, async (req, res, next) => {
     const { store_code, project_code } = req.body;
 
     // Validate required fields
-    if (!store_code || store_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'store_code is required'
-      });
-    }
+    // store_code is accepted but not required — addresses are per-customer
 
     if (!project_code || project_code.trim() === '') {
       return res.status(400).json({

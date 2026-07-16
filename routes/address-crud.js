@@ -54,12 +54,7 @@ router.post('/add-address', protect, async (req, res, next) => {
       });
     }
     
-    if (!email_id || email_id.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'email_id is required'
-      });
-    }
+    // email is optional for delivery addresses (mobile app does not collect it)
     
     if (!delivery_addr_line_1 || delivery_addr_line_1.trim() === '') {
       return res.status(400).json({
@@ -126,7 +121,7 @@ router.post('/add-address', protect, async (req, res, next) => {
       idaddress_book: nextId,
       full_name: full_name.trim(),
       mobile_number: userMobile,
-      email_id: email_id.trim().toLowerCase(),
+      email_id: (email_id || '').trim().toLowerCase(),
       delivery_addr_line_1: delivery_addr_line_1.trim(),
       delivery_addr_line_2: delivery_addr_line_2 ? delivery_addr_line_2.trim() : '',
       delivery_addr_city: delivery_addr_city.trim(),

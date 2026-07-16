@@ -18,7 +18,7 @@ const addressBookSchema = new mongoose.Schema({
   },
   email_id: {
     type: String,
-    required: [true, 'Email ID is required'],
+    default: '',
     trim: true,
     lowercase: true
   },

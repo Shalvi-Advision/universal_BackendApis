@@ -75,6 +75,7 @@ const razorpayRoutes = require('./routes/razorpay');
 const notificationRoutes = require('./routes/notifications');
 const offerRoutes = require('./routes/offers');
 const projectConfigRoutes = require('./routes/project-config');
+const projectsRoutes = require('./routes/projects');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -152,7 +153,7 @@ const corsOptions = {
   origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization', 'Cache-Control'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization', 'Cache-Control', 'X-Project-Code'],
   exposedHeaders: ['Content-Length', 'Date', 'X-Request-Id'],
   optionsSuccessStatus: 204,
   maxAge: 86400
@@ -247,6 +248,7 @@ app.use('/api', tenantResolver);
 
 // API routes
 app.use('/api/project-config', projectConfigRoutes);
+app.use('/api/projects', projectsRoutes);
 app.use('/api/auth', authLimiter, authRoutes); // Apply stricter rate limiting to auth routes
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);

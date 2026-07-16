@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
+const { requireProjectAccess } = require('../middleware/checkPermission');
 
 // Import admin sub-routes
 const userAdminRoutes = require('./admin/users');
@@ -13,9 +14,11 @@ const notificationAdminRoutes = require('./admin/notifications');
 const permissionAdminRoutes = require('./admin/permissions');
 const offerAdminRoutes = require('./admin/offers');
 
-// All admin routes require authentication and admin role
+// All admin routes require authentication, admin role, and access to the
+// project (tenant) the request is bound to
 router.use(protect);
 router.use(authorize('admin'));
+router.use(requireProjectAccess);
 
 // Mount admin sub-routes
 router.use('/users', userAdminRoutes);

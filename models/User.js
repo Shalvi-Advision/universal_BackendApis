@@ -39,6 +39,12 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Tenant scoping for admins: project codes this admin may operate on.
+  // Super admins ignore this (access to every project). Customers never use it.
+  allowed_project_codes: {
+    type: [String],
+    default: []
+  },
   permissions: {
     dashboard: {
       view: { type: Boolean, default: false }

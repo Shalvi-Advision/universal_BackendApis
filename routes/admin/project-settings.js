@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getProjectModel } = require('../../models/Project');
 const { checkPermission } = require('../../middleware/checkPermission');
+const { clearTenantCache } = require('../../middleware/tenant');
 
 // Branding/app settings ride on the dynamicSection permission group like
 // other merchandised content. requireProjectAccess (mounted on /api/admin)
@@ -103,6 +104,10 @@ router.put('/', edit, async (req, res) => {
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
+
+    // The tenant resolver caches registry docs for 60s — flush so the public
+    // /api/project-config reflects the new branding immediately.
+    clearTenantCache();
 
     res.status(200).json({
       success: true,

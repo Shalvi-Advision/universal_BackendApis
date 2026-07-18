@@ -14,6 +14,7 @@ const contentPageAdminRoutes = require('./admin/content-pages');
 const notificationAdminRoutes = require('./admin/notifications');
 const permissionAdminRoutes = require('./admin/permissions');
 const offerAdminRoutes = require('./admin/offers');
+const projectSettingsAdminRoutes = require('./admin/project-settings');
 
 // All admin routes require authentication, admin role, and access to the
 // project (tenant) the request is bound to
@@ -32,5 +33,6 @@ router.use('/content-pages', contentPageAdminRoutes);
 router.use('/notifications', notificationAdminRoutes);
 router.use('/permissions', permissionAdminRoutes);
 router.use('/offers', offerAdminRoutes);
+router.use('/project-settings', projectSettingsAdminRoutes);
 
 module.exports = router;

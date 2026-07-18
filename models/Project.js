@@ -33,8 +33,21 @@ const projectSchema = new mongoose.Schema(
     config: {
       app_name: { type: String, default: '' },
       logo_url: { type: String, default: '' },
+      splash_logo_url: { type: String, default: '' },
+      // Theme tokens consumed by the mobile app at runtime. Empty string =
+      // app falls back to its built-in default for that token.
       primary_color: { type: String, default: '' },
       secondary_color: { type: String, default: '' },
+      accent_color: { type: String, default: '' },
+      background_color: { type: String, default: '' },
+      text_primary_color: { type: String, default: '' },
+      text_secondary_color: { type: String, default: '' },
+      success_color: { type: String, default: '' },
+      warning_color: { type: String, default: '' },
+      error_color: { type: String, default: '' },
+      info_color: { type: String, default: '' },
+      // Google Fonts family name (e.g. "Poppins", "Inter").
+      font_family: { type: String, default: '' },
       contact_email: { type: String, default: '' },
       contact_phone: { type: String, default: '' },
       currency: { type: String, default: 'INR' },

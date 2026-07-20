@@ -10,6 +10,11 @@ const digitalCartSettingsSchema = new mongoose.Schema({
     trim: true,
     default: '' // '' = use the project's client name
   },
+  logo_url: {
+    type: String,
+    trim: true,
+    default: '' // '' = use the project branding logo
+  },
   tagline: {
     type: String,
     trim: true,
@@ -58,6 +63,10 @@ const digitalCartSettingsSchema = new mongoose.Schema({
     default: true
   },
   show_last_updated: {
+    type: Boolean,
+    default: true
+  },
+  show_logo: {
     type: Boolean,
     default: true
   }

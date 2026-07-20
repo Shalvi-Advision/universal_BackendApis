@@ -7,9 +7,9 @@ const { checkPermission } = require('../../middleware/checkPermission');
 const { parseDigitalCartCsv } = require('../../utils/digitalCartCsv');
 
 const HEX_COLOR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const SETTINGS_TEXT_FIELDS = ['header_title', 'tagline', 'footer_note'];
+const SETTINGS_TEXT_FIELDS = ['header_title', 'tagline', 'footer_note', 'logo_url'];
 const SETTINGS_COLOR_FIELDS = ['primary_color', 'accent_color', 'background_color', 'card_color', 'text_color'];
-const SETTINGS_BOOL_FIELDS = ['show_discount_percent', 'show_product_code', 'show_search', 'show_last_updated'];
+const SETTINGS_BOOL_FIELDS = ['show_discount_percent', 'show_product_code', 'show_search', 'show_last_updated', 'show_logo'];
 
 // CSV stays in memory — it is parsed and discarded, only rows are stored
 const upload = multer({

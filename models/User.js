@@ -90,6 +90,12 @@ const userSchema = new mongoose.Schema({
       create: { type: Boolean, default: false },
       edit: { type: Boolean, default: false },
       delete: { type: Boolean, default: false }
+    },
+    digitalCart: {
+      view: { type: Boolean, default: false },
+      create: { type: Boolean, default: false },
+      edit: { type: Boolean, default: false },
+      delete: { type: Boolean, default: false }
     }
   },
   addresses: [{

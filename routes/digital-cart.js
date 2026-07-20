@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const DigitalCartItem = require('../models/DigitalCartItem');
+const DigitalCartSettings = require('../models/DigitalCartSettings');
 
 // @route   GET /api/digital-cart
 // @desc    Public list of active digital cart offers for the resolved project
@@ -8,9 +9,12 @@ const DigitalCartItem = require('../models/DigitalCartItem');
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const items = await DigitalCartItem.find({ is_active: true })
-      .sort({ position: 1 })
-      .select('-__v -source_file');
+    const [items, settings] = await Promise.all([
+      DigitalCartItem.find({ is_active: true })
+        .sort({ position: 1 })
+        .select('-__v -source_file'),
+      DigitalCartSettings.findOne({}).select('-__v -_id -createdAt -updatedAt')
+    ]);
 
     const lastUpdated = items.reduce(
       (acc, item) => (!acc || item.updatedAt > acc ? item.updatedAt : acc),
@@ -20,6 +24,7 @@ router.get('/', async (req, res) => {
     res.status(200).json({
       success: true,
       data: items,
+      ui: settings || new DigitalCartSettings().toObject(),
       meta: {
         total: items.length,
         last_updated: lastUpdated

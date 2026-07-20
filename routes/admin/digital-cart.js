@@ -2,8 +2,14 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const DigitalCartItem = require('../../models/DigitalCartItem');
+const DigitalCartSettings = require('../../models/DigitalCartSettings');
 const { checkPermission } = require('../../middleware/checkPermission');
 const { parseDigitalCartCsv } = require('../../utils/digitalCartCsv');
+
+const HEX_COLOR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const SETTINGS_TEXT_FIELDS = ['header_title', 'tagline', 'footer_note'];
+const SETTINGS_COLOR_FIELDS = ['primary_color', 'accent_color', 'background_color', 'card_color', 'text_color'];
+const SETTINGS_BOOL_FIELDS = ['show_discount_percent', 'show_product_code', 'show_search', 'show_last_updated'];
 
 // CSV stays in memory — it is parsed and discarded, only rows are stored
 const upload = multer({
@@ -88,6 +94,68 @@ router.post(
     }
   }
 );
+
+// @route   GET /api/admin/digital-cart/settings
+// @desc    UI settings for the public digital cart site (defaults if unset)
+// @access  Admin (digitalCart:view)
+router.get('/settings', checkPermission('digitalCart', 'view'), async (req, res) => {
+  try {
+    const settings = await DigitalCartSettings.findOne({});
+    res.status(200).json({
+      success: true,
+      data: settings || new DigitalCartSettings().toObject()
+    });
+  } catch (error) {
+    console.error('Get digital cart settings error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching settings', error: error.message });
+  }
+});
+
+// @route   PUT /api/admin/digital-cart/settings
+// @desc    Update UI settings (whitelisted fields, hex-validated colors)
+// @access  Admin (digitalCart:edit)
+router.put('/settings', checkPermission('digitalCart', 'edit'), async (req, res) => {
+  try {
+    const updates = {};
+
+    for (const field of SETTINGS_TEXT_FIELDS) {
+      if (typeof req.body[field] === 'string') {
+        updates[field] = req.body[field].trim();
+      }
+    }
+
+    for (const field of SETTINGS_COLOR_FIELDS) {
+      if (typeof req.body[field] === 'string') {
+        const value = req.body[field].trim();
+        if (value && !HEX_COLOR.test(value)) {
+          return res.status(400).json({ success: false, message: `${field} must be a hex color like #RRGGBB (or empty)` });
+        }
+        updates[field] = value;
+      }
+    }
+
+    for (const field of SETTINGS_BOOL_FIELDS) {
+      if (typeof req.body[field] === 'boolean') {
+        updates[field] = req.body[field];
+      }
+    }
+
+    const settings = await DigitalCartSettings.findOneAndUpdate(
+      {},
+      { $set: updates },
+      { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Digital cart UI settings saved',
+      data: settings
+    });
+  } catch (error) {
+    console.error('Update digital cart settings error:', error);
+    res.status(500).json({ success: false, message: 'Error saving settings', error: error.message });
+  }
+});
 
 // @route   PATCH /api/admin/digital-cart/:id/toggle
 // @desc    Toggle a single item's visibility on the public site

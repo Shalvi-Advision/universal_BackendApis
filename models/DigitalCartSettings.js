@@ -106,6 +106,14 @@ const digitalCartSettingsSchema = new mongoose.Schema({
   show_bottom_nav: {
     type: Boolean,
     default: true
+  },
+  // Per-offer-group tile/hero overrides, keyed by group slug
+  // (percent_off, buy_1_get_1, ...). Each entry may set color, label
+  // (banner text), line1/line2 (big tile text) and ribbon. Empty/missing
+  // values fall back to the website's built-in group styles.
+  group_styles: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   }
 }, {
   timestamps: true,

@@ -11,6 +11,9 @@ const SETTINGS_TEXT_FIELDS = ['header_title', 'tagline', 'footer_note', 'logo_ur
 const SETTINGS_COLOR_FIELDS = ['primary_color', 'accent_color', 'background_color', 'card_color', 'text_color'];
 const SETTINGS_BOOL_FIELDS = ['show_discount_percent', 'show_product_code', 'show_search', 'show_last_updated', 'show_logo', 'show_bottom_nav'];
 const SETTINGS_NUMBER_FIELDS = [{ name: 'card_radius', min: 0, max: 40 }];
+// Per-offer-group tile overrides — slugs match the website's offer groups
+const GROUP_STYLE_KEYS = ['percent_off', 'buy_1_get_1', 'buy_2_get_1', 'rs_off', 'special_price', 'other_offers'];
+const GROUP_STYLE_FIELDS = ['color', 'label', 'line1', 'line2', 'ribbon'];
 
 // CSV stays in memory — it is parsed and discarded, only rows are stored
 const upload = multer({
@@ -139,6 +142,25 @@ router.put('/settings', checkPermission('digitalCart', 'edit'), async (req, res)
       if (typeof req.body[field] === 'boolean') {
         updates[field] = req.body[field];
       }
+    }
+
+    if (req.body.group_styles && typeof req.body.group_styles === 'object') {
+      const clean = {};
+      for (const key of GROUP_STYLE_KEYS) {
+        const entry = req.body.group_styles[key];
+        if (!entry || typeof entry !== 'object') continue;
+        const cleanEntry = {};
+        for (const field of GROUP_STYLE_FIELDS) {
+          if (typeof entry[field] === 'string') {
+            cleanEntry[field] = entry[field].trim().slice(0, 60);
+          }
+        }
+        if (cleanEntry.color && !HEX_COLOR.test(cleanEntry.color)) {
+          return res.status(400).json({ success: false, message: `group_styles.${key}.color must be a hex color like #RRGGBB (or empty)` });
+        }
+        clean[key] = cleanEntry;
+      }
+      updates.group_styles = clean;
     }
 
     for (const { name, min, max } of SETTINGS_NUMBER_FIELDS) {

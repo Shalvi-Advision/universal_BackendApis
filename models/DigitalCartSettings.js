@@ -25,6 +25,31 @@ const digitalCartSettingsSchema = new mongoose.Schema({
     trim: true,
     default: 'Offers valid till stocks last.'
   },
+  // Big heading on the home (offer tiles) screen
+  home_heading: {
+    type: String,
+    trim: true,
+    default: 'Exclusive Offers'
+  },
+  // Second line inside the home screen's info card (footer_note is the first)
+  info_sub_text: {
+    type: String,
+    trim: true,
+    default: 'Hurry up and grab the best deals.'
+  },
+  // "Offer valid till 31st July" line on the offer page;
+  // '' = fall back to the sheet's last-updated date
+  valid_till_text: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  // "About Us" link in the bottom navigation; '' = hide the About Us button
+  about_url: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   primary_color: {
     type: String,
     trim: true,
@@ -74,6 +99,11 @@ const digitalCartSettingsSchema = new mongoose.Schema({
     default: true
   },
   show_logo: {
+    type: Boolean,
+    default: true
+  },
+  // Bottom navigation bar (Back / Offers / About Us) on the offer page
+  show_bottom_nav: {
     type: Boolean,
     default: true
   }

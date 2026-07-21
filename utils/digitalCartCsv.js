@@ -48,6 +48,20 @@ const parseCsv = (text) => {
   return rows;
 };
 
+// Group the free-text Offer column into customer-facing tabs. The sheets are
+// inconsistent ("BUY1GET1", "B1G1", "BUY 1 GET 1", "0N MRP 20 RS OFF"...), so
+// classify on a normalized string with everything but letters/digits/% removed.
+const classifyOffer = (offerText) => {
+  const normalized = String(offerText || '').toUpperCase().replace(/[^A-Z0-9%]/g, '');
+  if (!normalized) return 'Other Offers';
+  if (/BUY2GET1/.test(normalized)) return 'Buy 2 Get 1';
+  if (/BUY1GET1|B1G1/.test(normalized)) return 'Buy 1 Get 1';
+  if (/%OFF/.test(normalized)) return '% Off';
+  if (/MRP.*OFF|RSOFF/.test(normalized)) return 'Rs. Off';
+  if (/ONLY|NET|PLP/.test(normalized)) return 'Special Price';
+  return 'Other Offers';
+};
+
 const toNumber = (raw) => {
   if (!raw) return null;
   const cleaned = String(raw).replace(/[₹,\s]/g, '');
@@ -99,6 +113,7 @@ const parseDigitalCartCsv = (csvText) => {
 
     const mrp = cell(row, columns.mrp);
     const offerPrice = cell(row, columns.offer_price);
+    const offerText = cell(row, columns.offer_text);
 
     items.push({
       p_code: cell(row, columns.p_code),
@@ -107,7 +122,8 @@ const parseDigitalCartCsv = (csvText) => {
       offer_price: offerPrice,
       mrp_value: toNumber(mrp),
       offer_price_value: toNumber(offerPrice),
-      offer_text: cell(row, columns.offer_text),
+      offer_text: offerText,
+      offer_group: classifyOffer(offerText),
       position: items.length,
       is_active: true
     });
@@ -120,4 +136,4 @@ const parseDigitalCartCsv = (csvText) => {
   return { items };
 };
 
-module.exports = { parseDigitalCartCsv, parseCsv };
+module.exports = { parseDigitalCartCsv, parseCsv, classifyOffer };

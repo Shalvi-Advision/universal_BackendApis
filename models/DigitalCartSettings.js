@@ -50,6 +50,13 @@ const digitalCartSettingsSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  // Product card corner rounding in px (0 = square corners)
+  card_radius: {
+    type: Number,
+    min: 0,
+    max: 40,
+    default: 14
+  },
   show_discount_percent: {
     type: Boolean,
     default: true

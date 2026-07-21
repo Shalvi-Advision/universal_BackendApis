@@ -10,6 +10,7 @@ const HEX_COLOR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const SETTINGS_TEXT_FIELDS = ['header_title', 'tagline', 'footer_note', 'logo_url'];
 const SETTINGS_COLOR_FIELDS = ['primary_color', 'accent_color', 'background_color', 'card_color', 'text_color'];
 const SETTINGS_BOOL_FIELDS = ['show_discount_percent', 'show_product_code', 'show_search', 'show_last_updated', 'show_logo'];
+const SETTINGS_NUMBER_FIELDS = [{ name: 'card_radius', min: 0, max: 40 }];
 
 // CSV stays in memory — it is parsed and discarded, only rows are stored
 const upload = multer({
@@ -137,6 +138,16 @@ router.put('/settings', checkPermission('digitalCart', 'edit'), async (req, res)
     for (const field of SETTINGS_BOOL_FIELDS) {
       if (typeof req.body[field] === 'boolean') {
         updates[field] = req.body[field];
+      }
+    }
+
+    for (const { name, min, max } of SETTINGS_NUMBER_FIELDS) {
+      if (req.body[name] !== undefined) {
+        const value = Number(req.body[name]);
+        if (!Number.isFinite(value) || value < min || value > max) {
+          return res.status(400).json({ success: false, message: `${name} must be a number between ${min} and ${max}` });
+        }
+        updates[name] = value;
       }
     }
 

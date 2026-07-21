@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const DigitalCartItem = require('../models/DigitalCartItem');
 const DigitalCartSettings = require('../models/DigitalCartSettings');
+const { classifyOffer } = require('../utils/digitalCartCsv');
 
 // @route   GET /api/digital-cart
 // @desc    Public list of active digital cart offers for the resolved project
@@ -21,9 +22,18 @@ router.get('/', async (req, res) => {
       null
     );
 
+    // Items uploaded before offer grouping existed have no offer_group —
+    // derive it here so the website tabs work without a re-upload
+    const data = items.map((item) => {
+      if (item.offer_group) return item;
+      const obj = item.toObject();
+      obj.offer_group = classifyOffer(obj.offer_text);
+      return obj;
+    });
+
     res.status(200).json({
       success: true,
-      data: items,
+      data,
       ui: settings || new DigitalCartSettings().toObject(),
       meta: {
         total: items.length,

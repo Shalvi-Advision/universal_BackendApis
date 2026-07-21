@@ -38,6 +38,13 @@ const digitalCartItemSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  // Normalized offer category derived from offer_text at CSV import
+  // ("Buy 1 Get 1", "Special Price", ...) — drives the tabs on the website
+  offer_group: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   position: {
     type: Number,
     default: 0

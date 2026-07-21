@@ -3,6 +3,7 @@ const router = express.Router();
 const DigitalCartItem = require('../models/DigitalCartItem');
 const DigitalCartSettings = require('../models/DigitalCartSettings');
 const { classifyOffer } = require('../utils/digitalCartCsv');
+const { mergeGroupStyles } = require('../utils/digitalCartGroups');
 
 // @route   GET /api/digital-cart
 // @desc    Public list of active digital cart offers for the resolved project
@@ -31,10 +32,15 @@ router.get('/', async (req, res) => {
       return obj;
     });
 
+    // ui.group_styles is always the full effective map (defaults merged
+    // with admin overrides) — the website hardcodes no group visuals
+    const ui = settings ? settings.toObject() : new DigitalCartSettings().toObject();
+    ui.group_styles = mergeGroupStyles(ui.group_styles);
+
     res.status(200).json({
       success: true,
       data,
-      ui: settings || new DigitalCartSettings().toObject(),
+      ui,
       meta: {
         total: items.length,
         last_updated: lastUpdated

@@ -4,6 +4,7 @@ const DigitalCartItem = require('../models/DigitalCartItem');
 const DigitalCartSettings = require('../models/DigitalCartSettings');
 const { offerGroupName } = require('../utils/digitalCartCsv');
 const { buildGroups } = require('../utils/digitalCartGroups');
+const ProductMaster = require('../models/ProductMaster');
 
 // @route   GET /api/digital-cart
 // @desc    Public list of active digital cart offers for the resolved project
@@ -31,6 +32,23 @@ router.get('/', async (req, res) => {
       obj.offer_group = offerGroupName(obj.offer_text);
       return obj;
     });
+
+    // Items without an image (no CSV Image column / admin upload) borrow
+    // the photo from the tenant's product master when the P-Code matches
+    const missingCodes = [...new Set(
+      data.filter((obj) => !obj.image_url && obj.p_code).map((obj) => obj.p_code)
+    )];
+    if (missingCodes.length > 0) {
+      const masters = await ProductMaster.find({
+        p_code: { $in: missingCodes },
+        pcode_img: { $nin: [null, ''] }
+      }).select('p_code pcode_img');
+      const imageByCode = {};
+      for (const master of masters) imageByCode[master.p_code] = master.pcode_img;
+      for (const obj of data) {
+        if (!obj.image_url && imageByCode[obj.p_code]) obj.image_url = imageByCode[obj.p_code];
+      }
+    }
 
     const ui = settings ? settings.toObject() : new DigitalCartSettings().toObject();
 

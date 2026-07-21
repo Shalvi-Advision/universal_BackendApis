@@ -233,6 +233,29 @@ router.patch('/:id/toggle', checkPermission('digitalCart', 'edit'), async (req, 
   }
 });
 
+// @route   PATCH /api/admin/digital-cart/:id/image
+// @desc    Set/clear a single item's product image
+// @access  Admin (digitalCart:edit)
+router.patch('/:id/image', checkPermission('digitalCart', 'edit'), async (req, res) => {
+  try {
+    if (typeof req.body.image_url !== 'string') {
+      return res.status(400).json({ success: false, message: 'image_url (string) is required — empty string clears the image' });
+    }
+    const item = await DigitalCartItem.findByIdAndUpdate(
+      req.params.id,
+      { $set: { image_url: req.body.image_url.trim().slice(0, 500) } },
+      { new: true }
+    );
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Item not found' });
+    }
+    res.status(200).json({ success: true, message: 'Product image updated', data: item });
+  } catch (error) {
+    console.error('Update digital cart item image error:', error);
+    res.status(500).json({ success: false, message: 'Error updating image', error: error.message });
+  }
+});
+
 // @route   DELETE /api/admin/digital-cart/:id
 // @desc    Delete a single item
 // @access  Admin (digitalCart:delete)

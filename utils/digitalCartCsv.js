@@ -87,7 +87,7 @@ const parseDigitalCartCsv = (csvText) => {
 
   // Locate the header row and map column indexes by header name
   let headerIndex = -1;
-  const columns = { p_code: -1, product_name: -1, mrp: -1, offer_price: -1, offer_text: -1 };
+  const columns = { p_code: -1, product_name: -1, mrp: -1, offer_price: -1, offer_text: -1, image_url: -1 };
 
   for (let i = 0; i < rows.length; i += 1) {
     const cells = rows[i].map((c) => c.trim().toLowerCase());
@@ -101,6 +101,7 @@ const parseDigitalCartCsv = (csvText) => {
       columns.mrp = cells.findIndex((c) => c === 'mrp');
       columns.offer_price = cells.findIndex((c) => c.includes('offer') && c.includes('price'));
       columns.offer_text = cells.findIndex((c, idx) => c === 'offer' && idx !== columns.offer_price);
+      columns.image_url = cells.findIndex((c) => /image|img|photo/.test(c));
       break;
     }
   }
@@ -122,6 +123,7 @@ const parseDigitalCartCsv = (csvText) => {
     const mrp = cell(row, columns.mrp);
     const offerPrice = cell(row, columns.offer_price);
     const offerText = cell(row, columns.offer_text);
+    const imageUrl = cell(row, columns.image_url);
 
     items.push({
       p_code: cell(row, columns.p_code),
@@ -132,6 +134,7 @@ const parseDigitalCartCsv = (csvText) => {
       offer_price_value: toNumber(offerPrice),
       offer_text: offerText,
       offer_group: offerGroupName(offerText),
+      image_url: /^https?:\/\//i.test(imageUrl) ? imageUrl : '',
       position: items.length,
       is_active: true
     });

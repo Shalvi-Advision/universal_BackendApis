@@ -38,6 +38,13 @@ const digitalCartItemSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  // Product photo: from the CSV's optional Image column, an admin upload,
+  // or auto-matched from the tenant's product master (pcode_img) at read time
+  image_url: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   // Normalized offer category derived from offer_text at CSV import
   // ("Buy 1 Get 1", "Special Price", ...) — drives the tabs on the website
   offer_group: {

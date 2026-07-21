@@ -5,7 +5,7 @@ const DigitalCartItem = require('../../models/DigitalCartItem');
 const DigitalCartSettings = require('../../models/DigitalCartSettings');
 const { checkPermission } = require('../../middleware/checkPermission');
 const { parseDigitalCartCsv } = require('../../utils/digitalCartCsv');
-const { GROUP_DEFAULTS } = require('../../utils/digitalCartGroups');
+const { buildGroups } = require('../../utils/digitalCartGroups');
 
 const HEX_COLOR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const SETTINGS_TEXT_FIELDS = ['header_title', 'tagline', 'footer_note', 'logo_url', 'home_heading', 'info_sub_text', 'valid_till_text', 'about_url'];
@@ -13,7 +13,10 @@ const SETTINGS_COLOR_FIELDS = ['primary_color', 'accent_color', 'background_colo
 const SETTINGS_BOOL_FIELDS = ['show_discount_percent', 'show_product_code', 'show_search', 'show_last_updated', 'show_logo', 'show_bottom_nav'];
 const SETTINGS_NUMBER_FIELDS = [{ name: 'card_radius', min: 0, max: 40 }];
 // Per-offer-group tile overrides — slugs match the website's offer groups
-const GROUP_STYLE_KEYS = Object.keys(GROUP_DEFAULTS);
+// Groups are dynamic (one per distinct Offer value in the sheet), so
+// override keys are validated by shape, not against a fixed list
+const GROUP_STYLE_KEY = /^[a-z0-9_]{1,60}$/;
+const GROUP_STYLE_MAX_KEYS = 200;
 const GROUP_STYLE_FIELDS = ['color', 'label', 'line1', 'line2', 'ribbon'];
 const GROUP_STYLE_URL_FIELDS = ['banner_image_url'];
 
@@ -106,13 +109,18 @@ router.post(
 // @access  Admin (digitalCart:view)
 router.get('/settings', checkPermission('digitalCart', 'view'), async (req, res) => {
   try {
-    const settings = await DigitalCartSettings.findOne({});
+    const [settings, items] = await Promise.all([
+      DigitalCartSettings.findOne({}),
+      DigitalCartItem.find({}).sort({ position: 1 }).select('offer_text')
+    ]);
+    const data = settings || new DigitalCartSettings().toObject();
     res.status(200).json({
       success: true,
-      data: settings || new DigitalCartSettings().toObject(),
-      // Built-in visuals per offer group — the panel uses these as
-      // placeholders/fallbacks so nothing is hardcoded client-side
-      group_style_defaults: GROUP_DEFAULTS
+      data,
+      // Offer groups present in the currently uploaded sheet, with their
+      // effective style + derived defaults (panel placeholders) — nothing
+      // about group visuals is hardcoded client-side
+      groups: buildGroups(items, data.group_styles)
     });
   } catch (error) {
     console.error('Get digital cart settings error:', error);
@@ -151,7 +159,8 @@ router.put('/settings', checkPermission('digitalCart', 'edit'), async (req, res)
 
     if (req.body.group_styles && typeof req.body.group_styles === 'object') {
       const clean = {};
-      for (const key of GROUP_STYLE_KEYS) {
+      for (const key of Object.keys(req.body.group_styles).slice(0, GROUP_STYLE_MAX_KEYS)) {
+        if (!GROUP_STYLE_KEY.test(key)) continue;
         const entry = req.body.group_styles[key];
         if (!entry || typeof entry !== 'object') continue;
         const cleanEntry = {};

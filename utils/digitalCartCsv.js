@@ -62,6 +62,14 @@ const classifyOffer = (offerText) => {
   return 'Other Offers';
 };
 
+// The customer-facing offer group IS the sheet's Offer column value,
+// normalized for display (trimmed, single-spaced, uppercased). Every
+// distinct value becomes its own tab/tile on the website.
+const offerGroupName = (offerText) => {
+  const name = String(offerText || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  return name || 'OTHER OFFERS';
+};
+
 const toNumber = (raw) => {
   if (!raw) return null;
   const cleaned = String(raw).replace(/[₹,\s]/g, '');
@@ -123,7 +131,7 @@ const parseDigitalCartCsv = (csvText) => {
       mrp_value: toNumber(mrp),
       offer_price_value: toNumber(offerPrice),
       offer_text: offerText,
-      offer_group: classifyOffer(offerText),
+      offer_group: offerGroupName(offerText),
       position: items.length,
       is_active: true
     });
@@ -136,4 +144,4 @@ const parseDigitalCartCsv = (csvText) => {
   return { items };
 };
 
-module.exports = { parseDigitalCartCsv, parseCsv, classifyOffer };
+module.exports = { parseDigitalCartCsv, parseCsv, classifyOffer, offerGroupName };

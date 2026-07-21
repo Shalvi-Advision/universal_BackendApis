@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const DigitalCartItem = require('../models/DigitalCartItem');
 const DigitalCartSettings = require('../models/DigitalCartSettings');
-const { classifyOffer } = require('../utils/digitalCartCsv');
-const { mergeGroupStyles } = require('../utils/digitalCartGroups');
+const { offerGroupName } = require('../utils/digitalCartCsv');
+const { buildGroups } = require('../utils/digitalCartGroups');
 
 // @route   GET /api/digital-cart
 // @desc    Public list of active digital cart offers for the resolved project
@@ -23,24 +23,24 @@ router.get('/', async (req, res) => {
       null
     );
 
-    // Items uploaded before offer grouping existed have no offer_group —
-    // derive it here so the website tabs work without a re-upload
+    // Groups are dynamic — derived from the sheet's Offer column at read
+    // time, so stored offer_group values (including legacy category names)
+    // never go stale
     const data = items.map((item) => {
-      if (item.offer_group) return item;
       const obj = item.toObject();
-      obj.offer_group = classifyOffer(obj.offer_text);
+      obj.offer_group = offerGroupName(obj.offer_text);
       return obj;
     });
 
-    // ui.group_styles is always the full effective map (defaults merged
-    // with admin overrides) — the website hardcodes no group visuals
     const ui = settings ? settings.toObject() : new DigitalCartSettings().toObject();
-    ui.group_styles = mergeGroupStyles(ui.group_styles);
 
     res.status(200).json({
       success: true,
       data,
       ui,
+      // One entry per distinct offer in the sheet (order preserved), with
+      // the effective tile/banner style: derived default + admin override
+      groups: buildGroups(data, ui.group_styles),
       meta: {
         total: items.length,
         last_updated: lastUpdated

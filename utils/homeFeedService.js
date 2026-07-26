@@ -112,7 +112,22 @@ const section = ({ id, type, sourceSequence, title, description, style, items })
   description: description || '',
   style: style || {},
   personalized: false,
+  ends_at: null,
+  audience: 'all',
+  config: {},
   items: items || [],
+});
+
+/**
+ * Campaign metadata the client needs to render a section correctly:
+ * `ends_at` drives countdowns, `audience` is matched on the device (the feed
+ * stays cacheable, so it cannot be filtered server-side), and `config` carries
+ * per-type settings.
+ */
+const campaignMeta = (entry) => ({
+  ends_at: entry.ends_at ? new Date(entry.ends_at).toISOString() : null,
+  audience: entry.audience || 'all',
+  config: entry.config || {},
 });
 
 /** A slot the client fills from data the server deliberately does not hold. */
@@ -124,6 +139,9 @@ const personalizedSection = ({ type, index }) => ({
   description: '',
   style: {},
   personalized: true,
+  ends_at: null,
+  audience: 'all',
+  config: {},
   items: [],
 });
 
@@ -307,10 +325,10 @@ function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSell
     if (PERSONALIZED_TYPES.includes(type)) {
       sections.push({
         ...personalizedSection({ type, index }),
+        ...campaignMeta(entry),
         id: String(entry._id || `${type}-${index}`),
         title: entry.title || '',
         style: { background_color: (entry.style && entry.style.background_color) || '' },
-        config: entry.config || {},
       });
       return;
     }
@@ -319,6 +337,7 @@ function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSell
       if (hero) {
         sections.push({
           ...hero,
+          ...campaignMeta(entry),
           id: String(entry._id || hero.id),
           title: entry.title || hero.title,
         });
@@ -362,7 +381,7 @@ function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSell
         },
         items,
       }),
-      config: entry.config || {},
+      ...campaignMeta(entry),
     });
   });
 

@@ -22,11 +22,13 @@ const SeasonalCategory = require('../models/SeasonalCategory');
 const BestSeller = require('../models/BestSeller');
 const TopSeller = require('../models/TopSeller');
 const Banner = require('../models/Banner');
+const HomeSection = require('../models/HomeSection');
 const ProductMaster = require('../models/ProductMaster');
 
 const { enrichPopularCategorySections } = require('../routes/popular-categories');
 const { enrichSeasonalCategorySections } = require('../routes/seasonal-categories');
 const { mapProductMaster } = require('../routes/best-sellers');
+const { PERSONALIZED_TYPES } = require('./homeSectionTypes');
 
 const SCHEMA_VERSION = 1;
 
@@ -250,28 +252,127 @@ function assembleFeed({ popular = [], seasonal = [], bestSellers = [], hero = nu
  *
  * Returns public, cacheable content only.
  */
-async function buildHomeFeed({ storeCode } = {}) {
+async function buildHomeFeed({ storeCode, now = new Date() } = {}) {
   const query = storeQuery(storeCode);
 
-  const [popularDocs, seasonalDocs, bestSellerDocs, hero] = await Promise.all([
-    PopularCategory.find(query).sort(bySequence).lean(),
-    SeasonalCategory.find(query).sort(bySequence).lean(),
-    BestSeller.find(query).sort(bySequence).lean(),
-    heroCarousel(storeCode),
-  ]);
+  const [popularDocs, seasonalDocs, bestSellerDocs, topSellerDocs, hero, layout] =
+    await Promise.all([
+      PopularCategory.find(query).sort(bySequence).lean(),
+      SeasonalCategory.find(query).sort(bySequence).lean(),
+      BestSeller.find(query).sort(bySequence).lean(),
+      TopSeller.find(query).sort(bySequence).lean(),
+      heroCarousel(storeCode),
+      HomeSection.findRenderable({ storeCode, now }),
+    ]);
 
-  const [popular, seasonal, bestSellers] = await Promise.all([
+  const [popular, seasonal, bestSellers, topSellers] = await Promise.all([
     enrichPopularCategorySections(popularDocs),
     enrichSeasonalCategorySections(seasonalDocs),
     enrichProducts(bestSellerDocs),
+    enrichProducts(topSellerDocs),
   ]);
 
+  // A tenant that has never opened the Home Builder has no layout documents,
+  // and gets the default arrangement — so adopting the builder is opt-in and
+  // reversible by deleting the documents.
+  if (Array.isArray(layout) && layout.length > 0) {
+    return assembleFromLayout({ layout, popular, seasonal, bestSellers, topSellers, hero });
+  }
+
   return assembleFeed({ popular, seasonal, bestSellers, hero });
+}
+
+/**
+ * Builds the feed from an admin-defined layout (the HomeSection collection).
+ *
+ * Content still comes from the collections it always did; a HomeSection only
+ * says which one, in what position. A section pointing at a document that has
+ * since been deleted is dropped rather than rendered empty.
+ */
+function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSellers = [], topSellers = [], hero = null } = {}) {
+  const popularBySeq = bySequenceMap(popular);
+  const seasonalBySeq = bySequenceMap(seasonal);
+  const bestSellerBySeq = bySequenceMap(bestSellers);
+  const topSellerBySeq = bySequenceMap(topSellers);
+
+  const sections = [];
+
+  layout.forEach((entry, index) => {
+    const type = entry.type;
+    const sequence = entry.source && entry.source.sequence != null
+      ? Number(entry.source.sequence)
+      : null;
+
+    // Placeholders the client fills; nothing to resolve server-side.
+    if (PERSONALIZED_TYPES.includes(type)) {
+      sections.push({
+        ...personalizedSection({ type, index }),
+        id: String(entry._id || `${type}-${index}`),
+        title: entry.title || '',
+        style: { background_color: (entry.style && entry.style.background_color) || '' },
+        config: entry.config || {},
+      });
+      return;
+    }
+
+    if (type === SECTION_TYPES.HERO_CAROUSEL) {
+      if (hero) {
+        sections.push({
+          ...hero,
+          id: String(entry._id || hero.id),
+          title: entry.title || hero.title,
+        });
+      }
+      return;
+    }
+
+    const collection = (entry.source && entry.source.collection_name) || 'none';
+
+    let doc = null;
+    let items = [];
+
+    if (collection === 'best_sellers' || (type === SECTION_TYPES.PRODUCT_RAIL && collection === 'none')) {
+      doc = bestSellerBySeq.get(sequence);
+      items = doc ? doc.products || [] : [];
+    } else if (collection === 'top_sellers') {
+      doc = topSellerBySeq.get(sequence);
+      items = doc ? doc.products || [] : [];
+    } else if (collection === 'seasonal_categories') {
+      doc = seasonalBySeq.get(sequence);
+      items = doc ? doc.subcategories || [] : [];
+    } else {
+      doc = popularBySeq.get(sequence);
+      items = doc ? doc.subcategories || [] : [];
+    }
+
+    // The source document was deleted or deactivated; a heading with nothing
+    // under it is worse than no section.
+    if (!doc) return;
+
+    sections.push({
+      ...section({
+        id: entry._id,
+        type,
+        sourceSequence: sequence,
+        title: entry.title || doc.title,
+        description: doc.description,
+        style: {
+          background_color:
+            (entry.style && entry.style.background_color) || doc.background_color || '',
+        },
+        items,
+      }),
+      config: entry.config || {},
+    });
+  });
+
+  return sections.map((s, i) => ({ ...s, slot: i }));
 }
 
 module.exports = {
   buildHomeFeed,
   assembleFeed,
+  assembleFromLayout,
   enrichProducts,
   SCHEMA_VERSION,
   SECTION_TYPES,

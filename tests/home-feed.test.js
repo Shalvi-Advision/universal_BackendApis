@@ -8,7 +8,7 @@
 // regression.
 
 const assert = require('assert');
-const { assembleFeed, SECTION_TYPES } = require('../utils/homeFeedService');
+const { assembleFeed, assembleFromLayout, SECTION_TYPES } = require('../utils/homeFeedService');
 
 const popularSection = (sequence) => ({
   _id: `popular-${sequence}`,
@@ -154,6 +154,112 @@ test('background colour and title reach the client', () => {
   const strip = fullFeed().find((s) => s.type === SECTION_TYPES.CATEGORY_STRIP);
   assert.strictEqual(strip.title, 'Popular 1');
   assert.strictEqual(strip.style.background_color, '#FFFFFF');
+});
+
+
+// ---- Phase 2: admin-defined layout ----
+
+const layoutEntry = (type, { sequence = null, collection = 'none', title = '', id } = {}) => ({
+  _id: id || `layout-${type}-${sequence ?? 0}`,
+  type,
+  title,
+  sequence: 0,
+  source: { collection_name: collection, sequence },
+  style: {},
+  config: {},
+});
+
+test('layout order wins over the built-in arrangement', () => {
+  const feed = assembleFromLayout({
+    layout: [
+      layoutEntry(SECTION_TYPES.PRODUCT_RAIL, { sequence: 1, collection: 'best_sellers' }),
+      layoutEntry(SECTION_TYPES.CATEGORY_GRID, { sequence: 2, collection: 'popular_categories' }),
+      layoutEntry(SECTION_TYPES.OFFER_STRIP),
+    ],
+    popular: [popularSection(2)],
+    bestSellers: [bestSellerSection(1)],
+  });
+
+  assert.deepStrictEqual(feed.map((s) => s.type), [
+    SECTION_TYPES.PRODUCT_RAIL,
+    SECTION_TYPES.CATEGORY_GRID,
+    SECTION_TYPES.OFFER_STRIP,
+  ]);
+  assert.deepStrictEqual(feed.map((s) => s.slot), [0, 1, 2]);
+});
+
+test('a layout title overrides the source document title', () => {
+  const feed = assembleFromLayout({
+    layout: [
+      layoutEntry(SECTION_TYPES.CATEGORY_GRID, {
+        sequence: 2,
+        collection: 'popular_categories',
+        title: 'Diwali picks',
+      }),
+    ],
+    popular: [popularSection(2)],
+  });
+
+  assert.strictEqual(feed[0].title, 'Diwali picks');
+});
+
+test('an empty layout title falls back to the source document', () => {
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.CATEGORY_GRID, { sequence: 2, collection: 'popular_categories' })],
+    popular: [popularSection(2)],
+  });
+
+  assert.strictEqual(feed[0].title, 'Popular 2');
+});
+
+test('a section pointing at a deleted document is dropped', () => {
+  const feed = assembleFromLayout({
+    layout: [
+      layoutEntry(SECTION_TYPES.CATEGORY_GRID, { sequence: 9, collection: 'popular_categories' }),
+      layoutEntry(SECTION_TYPES.CATEGORY_GRID, { sequence: 2, collection: 'popular_categories' }),
+    ],
+    popular: [popularSection(2)],
+  });
+
+  assert.strictEqual(feed.length, 1, 'the dangling section must not render as an empty heading');
+  assert.strictEqual(feed[0].source.sequence, 2);
+});
+
+test('a layout can point a product rail at top sellers', () => {
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.PRODUCT_RAIL, { sequence: 1, collection: 'top_sellers' })],
+    topSellers: [bestSellerSection(1)],
+  });
+
+  assert.strictEqual(feed.length, 1);
+  assert.strictEqual(feed[0].items[0].p_code, 'p1');
+});
+
+test('personalized types stay empty however the layout places them', () => {
+  const feed = assembleFromLayout({
+    layout: [
+      layoutEntry('buy_again'),
+      layoutEntry('recently_viewed'),
+      layoutEntry('free_delivery_progress'),
+    ],
+  });
+
+  assert.strictEqual(feed.length, 3);
+  assert.ok(feed.every((s) => s.personalized === true));
+  assert.ok(feed.every((s) => s.items.length === 0));
+});
+
+test('the same layout repeats a type as many times as it likes', () => {
+  const feed = assembleFromLayout({
+    layout: [
+      layoutEntry(SECTION_TYPES.PRODUCT_RAIL, { sequence: 1, collection: 'best_sellers', id: 'a' }),
+      layoutEntry(SECTION_TYPES.PRODUCT_RAIL, { sequence: 2, collection: 'best_sellers', id: 'b' }),
+    ],
+    bestSellers: [bestSellerSection(1), bestSellerSection(2)],
+  });
+
+  assert.strictEqual(feed.length, 2);
+  assert.deepStrictEqual(feed.map((s) => s.id), ['a', 'b']);
 });
 
 // ----------------------------------------------------------------------

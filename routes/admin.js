@@ -17,6 +17,7 @@ const offerAdminRoutes = require('./admin/offers');
 const projectSettingsAdminRoutes = require('./admin/project-settings');
 const digitalCartAdminRoutes = require('./admin/digital-cart');
 const onboardingAdminRoutes = require('./admin/onboarding');
+const homeSectionAdminRoutes = require('./admin/home-sections');
 
 // All admin routes require authentication, admin role, and access to the
 // project (tenant) the request is bound to
@@ -38,5 +39,6 @@ router.use('/offers', offerAdminRoutes);
 router.use('/project-settings', projectSettingsAdminRoutes);
 router.use('/digital-cart', digitalCartAdminRoutes);
 router.use('/onboarding', onboardingAdminRoutes);
+router.use('/home-sections', homeSectionAdminRoutes);
 
 module.exports = router;

@@ -52,12 +52,27 @@ const projectSchema = new mongoose.Schema(
       contact_phone: { type: String, default: '' },
       currency: { type: String, default: 'INR' },
       razorpay_key_id: { type: String, default: '' },
+      // Publishable Google Maps key. Public by nature — it ships inside the
+      // app binary — so it is restricted by bundle id in Google Cloud, not by
+      // being kept out of this response.
+      google_maps_api_key: { type: String, default: '' },
       // Mobile app force-update policy (consumed by the Flutter app at launch).
       min_app_version: { type: String, default: '' },
       latest_app_version: { type: String, default: '' },
       android_store_url: { type: String, default: '' },
       ios_store_url: { type: String, default: '' },
       force_update_message: { type: String, default: '' },
+      // Splash screen, edited under Mobile App > App Settings. Declared here
+      // because `config` is a strict subdocument — a key missing from this
+      // schema is dropped on save without an error.
+      splash_logo_size: { type: String, default: '' },
+      splash_background_color: { type: String, default: '' },
+      splash_background_image_url: { type: String, default: '' },
+      splash_tagline: { type: String, default: '' },
+      splash_tagline_color: { type: String, default: '' },
+      splash_animation: { type: String, default: '' },
+      splash_duration_ms: { type: String, default: '' },
+      splash_show_loader: { type: String, default: '' },
     },
     // Server-side only credentials (never returned by public endpoints).
     secrets: {

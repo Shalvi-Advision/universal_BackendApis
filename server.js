@@ -78,6 +78,7 @@ const projectConfigRoutes = require('./routes/project-config');
 const contentRoutes = require('./routes/content');
 const projectsRoutes = require('./routes/projects');
 const digitalCartRoutes = require('./routes/digital-cart');
+const onboardingRoutes = require('./routes/onboarding');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -278,6 +279,7 @@ app.use('/api/advertisements', advertisementRoutes);
 app.use('/api/delivery-charges', deliveryChargesRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/digital-cart', digitalCartRoutes);
+app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/razorpay', razorpayRoutes);
 app.use('/api/notifications', notificationRoutes);

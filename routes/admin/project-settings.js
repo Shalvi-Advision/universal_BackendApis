@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getProjectModel } = require('../../models/Project');
-const { checkPermission } = require('../../middleware/checkPermission');
+const { checkPermission, requireSuperAdmin } = require('../../middleware/checkPermission');
 const { clearTenantCache } = require('../../middleware/tenant');
 
 // Branding/app settings ride on the dynamicSection permission group like
@@ -48,6 +48,16 @@ const EDITABLE_FIELDS = [
   'splash_duration_ms',
   'splash_show_loader',
 ];
+
+// Publishable integration values. Split out because they are edited on the
+// Integrations page by super admins only — a wrong payment key id breaks
+// checkout for every user, which is a different class of mistake from a wrong
+// brand colour. Secrets are never in this list; see the /secrets route.
+const INTEGRATION_FIELDS = ['razorpay_key_id', 'currency', 'google_maps_api_key'];
+
+// Write-only. Stored on project.secrets (select: false) and never returned by
+// any endpoint — the panel shows whether one is set, never its value.
+const SECRET_FIELDS = ['razorpay_key_secret', 'sms_api_key'];
 
 const COLOR_FIELDS = EDITABLE_FIELDS.filter((f) => f.endsWith('_color'));
 const HEX_COLOR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
@@ -170,6 +180,149 @@ router.put('/', edit, async (req, res) => {
   } catch (error) {
     console.error('Update project settings error:', error);
     res.status(500).json({ success: false, message: 'Error saving project settings', error: error.message });
+  }
+});
+
+// @route   GET /api/admin/project-settings/integrations
+// @desc    Publishable integration values, plus whether each secret is set
+// @access  Super admin
+router.get('/integrations', requireSuperAdmin, async (req, res) => {
+  try {
+    const Project = getProjectModel();
+    // secrets are select:false — ask for them explicitly, and only to report
+    // whether they exist.
+    const project = await Project.findOne({ project_code: req.tenant.projectCode })
+      .select('+secrets.razorpay_key_secret +secrets.sms_api_key')
+      .lean();
+
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    const config = project.config || {};
+    const secrets = project.secrets || {};
+
+    res.status(200).json({
+      success: true,
+      data: {
+        project_code: project.project_code,
+        integrations: INTEGRATION_FIELDS.reduce((acc, field) => {
+          acc[field] = config[field] || '';
+          return acc;
+        }, {}),
+        // Presence only, never the value.
+        secrets_set: SECRET_FIELDS.reduce((acc, field) => {
+          acc[field] = Boolean(secrets[field]);
+          return acc;
+        }, {}),
+      },
+    });
+  } catch (error) {
+    console.error('Get integrations error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching integrations', error: error.message });
+  }
+});
+
+// @route   PUT /api/admin/project-settings/integrations
+// @desc    Update publishable integration values
+// @access  Super admin
+router.put('/integrations', requireSuperAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const $set = {};
+
+    for (const field of INTEGRATION_FIELDS) {
+      if (!(field in body)) continue;
+      const value = body[field] === null ? '' : String(body[field]).trim();
+
+      if (value && /\s/.test(value)) {
+        return res.status(400).json({ success: false, message: `${field} must not contain spaces` });
+      }
+      if (field === 'currency' && value && !/^[A-Za-z]{3}$/.test(value)) {
+        return res.status(400).json({ success: false, message: 'currency must be a 3-letter code like INR' });
+      }
+
+      $set[`config.${field}`] = field === 'currency' ? value.toUpperCase() : value;
+    }
+
+    if (Object.keys($set).length === 0) {
+      return res.status(400).json({ success: false, message: 'No integration fields provided' });
+    }
+
+    const Project = getProjectModel();
+    const project = await Project.findOneAndUpdate(
+      { project_code: req.tenant.projectCode },
+      { $set },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    clearTenantCache();
+
+    const config = project.config || {};
+    res.status(200).json({
+      success: true,
+      message: 'Integrations saved successfully',
+      data: {
+        project_code: project.project_code,
+        integrations: INTEGRATION_FIELDS.reduce((acc, field) => {
+          acc[field] = config[field] || '';
+          return acc;
+        }, {}),
+      },
+    });
+  } catch (error) {
+    console.error('Update integrations error:', error);
+    res.status(500).json({ success: false, message: 'Error saving integrations', error: error.message });
+  }
+});
+
+// @route   PUT /api/admin/project-settings/secrets
+// @desc    Overwrite server-side credentials. Write-only: nothing is returned.
+// @access  Super admin
+router.put('/secrets', requireSuperAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const $set = {};
+    const updated = [];
+
+    for (const field of SECRET_FIELDS) {
+      if (!(field in body)) continue;
+      const value = String(body[field] ?? '').trim();
+      // An empty string is a deliberate clear; the panel sends the field only
+      // when the admin typed something or asked to remove it.
+      $set[`secrets.${field}`] = value;
+      updated.push(field);
+    }
+
+    if (updated.length === 0) {
+      return res.status(400).json({ success: false, message: 'No secret fields provided' });
+    }
+
+    const Project = getProjectModel();
+    const project = await Project.findOneAndUpdate(
+      { project_code: req.tenant.projectCode },
+      { $set },
+      { new: true }
+    ).lean();
+
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    clearTenantCache();
+
+    res.status(200).json({
+      success: true,
+      message: `Updated: ${updated.join(', ')}`,
+      data: { updated },
+    });
+  } catch (error) {
+    console.error('Update secrets error:', error);
+    res.status(500).json({ success: false, message: 'Error saving secrets', error: error.message });
   }
 });
 

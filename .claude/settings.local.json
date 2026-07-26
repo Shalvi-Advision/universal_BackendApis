@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node update-postman.js:*)",
+      "Bash(node -e:*)",
+      "Bash(node verify.js:*)",
+      "Bash(node update-postman-seasonal.js:*)",
+      "Bash(node verify-seasonal.js:*)",
+      "Read(//Users/gauravpawar/Desktop/Ecomapi/admin_panel/**)",
+      "Bash(npm run lint)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run build:*)",
+      "Read(//Users/gauravpawar/Documents/Development/code/Shalvi/shalvi_web_Setup/**)",
+      "Bash(npm install:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -16,7 +16,6 @@ const edit = checkPermission('dynamicSection', 'edit');
 const EDITABLE_FIELDS = [
   'app_name',
   'logo_url',
-  'splash_logo_url',
   'primary_color',
   'secondary_color',
   'accent_color',
@@ -35,10 +34,62 @@ const EDITABLE_FIELDS = [
   'android_store_url',
   'ios_store_url',
   'force_update_message',
+
+  // Splash screen — managed from the panel's Mobile App > App Settings page.
+  // The mobile app applies these from its cached config before the first
+  // frame, so a change lands on the next launch without a rebuild.
+  'splash_logo_url',
+  'splash_logo_size',
+  'splash_background_color',
+  'splash_background_image_url',
+  'splash_tagline',
+  'splash_tagline_color',
+  'splash_animation',
+  'splash_duration_ms',
+  'splash_show_loader',
 ];
 
 const COLOR_FIELDS = EDITABLE_FIELDS.filter((f) => f.endsWith('_color'));
 const HEX_COLOR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+const SPLASH_ANIMATIONS = ['fade', 'scale', 'fade_scale', 'none'];
+
+// Numeric fields, with the range the mobile app can actually render.
+const NUMERIC_FIELDS = {
+  splash_logo_size: { min: 40, max: 600, label: 'Splash logo size' },
+  splash_duration_ms: { min: 0, max: 10000, label: 'Splash duration' },
+};
+
+const BOOLEAN_FIELDS = ['splash_show_loader'];
+
+// Returns an error message, or null when the value is acceptable. Empty
+// clears the field and always passes — that is how a tenant reverts to the
+// app's built-in default.
+function validateField(field, value) {
+  if (!value) return null;
+
+  if (COLOR_FIELDS.includes(field) && !HEX_COLOR.test(value)) {
+    return `${field} must be a hex color like #RRGGBB`;
+  }
+
+  if (field === 'splash_animation' && !SPLASH_ANIMATIONS.includes(value)) {
+    return `splash_animation must be one of: ${SPLASH_ANIMATIONS.join(', ')}`;
+  }
+
+  const numeric = NUMERIC_FIELDS[field];
+  if (numeric) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < numeric.min || parsed > numeric.max) {
+      return `${numeric.label} must be a number between ${numeric.min} and ${numeric.max}`;
+    }
+  }
+
+  if (BOOLEAN_FIELDS.includes(field) && value !== 'true' && value !== 'false') {
+    return `${field} must be "true" or "false"`;
+  }
+
+  return null;
+}
 
 // @route   GET /api/admin/project-settings
 // @desc    Full config of the currently selected project
@@ -81,11 +132,9 @@ router.put('/', edit, async (req, res) => {
       if (!(field in body)) continue;
       const value = body[field] === null ? '' : String(body[field]).trim();
 
-      if (value && COLOR_FIELDS.includes(field) && !HEX_COLOR.test(value)) {
-        return res.status(400).json({
-          success: false,
-          message: `${field} must be a hex color like #RRGGBB`,
-        });
+      const error = validateField(field, value);
+      if (error) {
+        return res.status(400).json({ success: false, message: error });
       }
       $set[`config.${field}`] = value;
     }

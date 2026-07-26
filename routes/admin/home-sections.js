@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const HomeSection = require('../../models/HomeSection');
+const HomeSectionEvent = require('../../models/HomeSectionEvent');
 const PopularCategory = require('../../models/PopularCategory');
 const BestSeller = require('../../models/BestSeller');
 const SeasonalCategory = require('../../models/SeasonalCategory');
@@ -122,6 +123,49 @@ router.get('/', view, async (req, res) => {
   } catch (error) {
     console.error('List home sections error:', error);
     res.status(500).json({ success: false, message: 'Error fetching home sections', error: error.message });
+  }
+});
+
+// @route   GET /api/admin/home-sections/analytics
+// @desc    Impressions, taps and CTR per section over a recent window
+// @access  Admin (dynamicSection view)
+//
+// Declared before /:id so "analytics" is not read as an id.
+router.get('/analytics', view, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 90);
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    since.setDate(since.getDate() - (days - 1));
+
+    const totals = await HomeSectionEvent.aggregate([
+      { $match: { day: { $gte: since } } },
+      {
+        $group: {
+          _id: '$section_id',
+          impressions: { $sum: '$impressions' },
+          clicks: { $sum: '$clicks' },
+          section_type: { $first: '$section_type' },
+        },
+      },
+    ]);
+
+    const data = totals.map((row) => ({
+      section_id: row._id,
+      section_type: row.section_type || '',
+      impressions: row.impressions,
+      clicks: row.clicks,
+      // Null rather than 0 when nothing was seen — an unseen section has no
+      // click-through rate, which is different from a rate of zero.
+      ctr: row.impressions > 0 ? row.clicks / row.impressions : null,
+    }));
+
+    data.sort((a, b) => (b.ctr ?? -1) - (a.ctr ?? -1));
+
+    res.status(200).json({ success: true, days, count: data.length, data });
+  } catch (error) {
+    console.error('Home section analytics error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching analytics', error: error.message });
   }
 });
 

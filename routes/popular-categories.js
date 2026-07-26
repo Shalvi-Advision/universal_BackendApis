@@ -740,3 +740,7 @@ router.delete('/:id', async (req, res, next) => {
 
 module.exports = router;
 
+// Exported for the home feed builder (utils/homeFeedService.js), which needs
+// the same enrichment this route applies. Attached to the router rather than
+// moved to utils/ so the live endpoint's behaviour is untouched.
+module.exports.enrichPopularCategorySections = enrichPopularCategorySections;

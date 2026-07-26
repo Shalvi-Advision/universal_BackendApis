@@ -571,3 +571,5 @@ router.delete('/:id', async (req, res, next) => {
 
 module.exports = router;
 
+// See the note in routes/popular-categories.js.
+module.exports.mapProductMaster = mapProductMaster;

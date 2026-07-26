@@ -790,3 +790,6 @@ router.delete('/:id', async (req, res, next) => {
 
 module.exports = router;
 
+// See the note in routes/popular-categories.js — shared with the home feed
+// builder so both produce identically enriched sections.
+module.exports.enrichSeasonalCategorySections = enrichSeasonalCategorySections;

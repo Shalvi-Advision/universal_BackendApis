@@ -73,6 +73,10 @@ const projectSchema = new mongoose.Schema(
       splash_animation: { type: String, default: '' },
       splash_duration_ms: { type: String, default: '' },
       splash_show_loader: { type: String, default: '' },
+      // Rollout switch for the server-defined home feed. 'true' renders home
+      // from POST /api/home/feed; anything else keeps the layout compiled
+      // into the app.
+      home_feed_enabled: { type: String, default: '' },
     },
     // Server-side only credentials (never returned by public endpoints).
     secrets: {

@@ -47,6 +47,9 @@ const EDITABLE_FIELDS = [
   'splash_animation',
   'splash_duration_ms',
   'splash_show_loader',
+
+  // Home screen rollout.
+  'home_feed_enabled',
 ];
 
 // Publishable integration values. Split out because they are edited on the
@@ -70,7 +73,7 @@ const NUMERIC_FIELDS = {
   splash_duration_ms: { min: 0, max: 10000, label: 'Splash duration' },
 };
 
-const BOOLEAN_FIELDS = ['splash_show_loader'];
+const BOOLEAN_FIELDS = ['splash_show_loader', 'home_feed_enabled'];
 
 // Returns an error message, or null when the value is acceptable. Empty
 // clears the field and always passes — that is how a tenant reverts to the

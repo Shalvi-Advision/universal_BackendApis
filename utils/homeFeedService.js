@@ -22,6 +22,7 @@ const SeasonalCategory = require('../models/SeasonalCategory');
 const BestSeller = require('../models/BestSeller');
 const TopSeller = require('../models/TopSeller');
 const Banner = require('../models/Banner');
+const Advertisement = require('../models/Advertisement');
 const HomeSection = require('../models/HomeSection');
 const ProductMaster = require('../models/ProductMaster');
 
@@ -36,6 +37,7 @@ const SCHEMA_VERSION = 1;
 // the app is the whole cost of a new section type.
 const SECTION_TYPES = {
   HERO_CAROUSEL: 'hero_carousel',
+  BANNER_STRIP: 'banner_strip',
   CATEGORY_STRIP: 'category_strip',
   CATEGORY_GRID: 'category_grid',
   PRODUCT_RAIL: 'product_rail',
@@ -43,10 +45,23 @@ const SECTION_TYPES = {
   SEASONAL_PICKS: 'seasonal_picks',
 };
 
+// Banner placements the home screen draws. `home_top` is the hero carousel the
+// app has always shown; `home_middle` is the second placement the admin panel
+// has always offered in its filter but nothing ever rendered.
+const BANNER_SECTIONS = {
+  HERO: 'home_top',
+  MID: 'home_middle',
+};
+
 // How many best-seller rails and offer slots the current app interleaves.
 // Mirrors `bestSellerCount` in the Flutter home screen.
 const BEST_SELLER_SLOTS = 4;
 const OFFER_SLOTS = 4;
+
+// Top-seller rails in the default layout. Kept below the best-seller count on
+// purpose: top sellers land after the interleaved block, and a long tail of
+// rails past the fold earns nothing.
+const TOP_SELLER_SLOTS = 2;
 
 const storeQuery = (storeCode) => {
   const query = { is_active: true };
@@ -96,18 +111,26 @@ async function enrichProducts(sections) {
   }));
 }
 
+// `bg_color` is what the top_sellers collection calls it; every other
+// collection uses `background_color`. Reading only one silently dropped the
+// colour for whichever collection did not match.
 const styleOf = (doc) => ({
-  background_color: doc?.background_color || '',
+  background_color: doc?.background_color || doc?.bg_color || '',
   banner_urls: doc?.banner_urls || null,
 });
 
 /** A section carrying content. */
-const section = ({ id, type, sourceSequence, title, description, style, items }) => ({
+const section = ({ id, type, sourceSequence, sourceCollection, title, description, style, items }) => ({
   id: id ? String(id) : `${type}-${sourceSequence ?? 0}`,
   type,
   // Which document this came from. The app's Phase 1 renderers still address
   // sections by sequence, so this is what lets them line up.
-  source: { sequence: sourceSequence ?? null },
+  //
+  // `collection_name` matters where one type can be backed by more than one
+  // collection: a product_rail fed by top_sellers and one fed by best_sellers
+  // are indistinguishable by sequence alone, and a client that guessed would
+  // render the wrong collection's rail.
+  source: { sequence: sourceSequence ?? null, collection_name: sourceCollection || null },
   title: title || '',
   description: description || '',
   style: style || {},
@@ -145,15 +168,23 @@ const personalizedSection = ({ type, index }) => ({
   items: [],
 });
 
-async function heroCarousel(storeCode) {
+/**
+ * One banner placement, as a renderable section.
+ *
+ * `sectionName` is the admin panel's `section_name`. Previously only
+ * `home_top` was ever asked for, so banners saved under any other placement —
+ * `home_middle` among them, which the panel's own filter offers — were
+ * unreachable from the app.
+ */
+async function bannerSection({ storeCode, sectionName, type, title = '' }) {
   const trimmed = (storeCode || '').toString().trim();
   const banners = trimmed
     ? await Banner.findByStoreCodes({
         storeCodes: [trimmed],
-        sectionName: 'home_top',
+        sectionName,
         activeOnly: true,
       })
-    : await Banner.findActive({ sectionName: 'home_top' });
+    : await Banner.findActive({ sectionName });
 
   if (!banners || banners.length === 0) return null;
 
@@ -162,11 +193,71 @@ async function heroCarousel(storeCode) {
   if (items.length === 0) return null;
 
   return section({
-    id: 'home_top',
-    type: SECTION_TYPES.HERO_CAROUSEL,
+    id: sectionName,
+    type,
     sourceSequence: 0,
-    title: '',
+    sourceCollection: 'banners',
+    title,
     items,
+  });
+}
+
+const heroCarousel = (storeCode) =>
+  bannerSection({
+    storeCode,
+    sectionName: BANNER_SECTIONS.HERO,
+    type: SECTION_TYPES.HERO_CAROUSEL,
+  });
+
+const midBanners = (storeCode) =>
+  bannerSection({
+    storeCode,
+    sectionName: BANNER_SECTIONS.MID,
+    type: SECTION_TYPES.BANNER_STRIP,
+  });
+
+/**
+ * Advertisements as a renderable section.
+ *
+ * `advertisements` was already offered as a layout source but nothing resolved
+ * it, so a section pointing at one was dropped without a trace. The `popup`
+ * category is excluded: those are modal creatives the app shows over the home
+ * screen, and drawing them inline as well would double them up.
+ */
+async function advertisementSection({ storeCode, category, title = '', now = new Date() }) {
+  const trimmed = (storeCode || '').toString().trim();
+  const query = { is_active: true };
+
+  if (trimmed) {
+    query.$or = [{ store_codes: trimmed }, { store_code: trimmed }];
+  }
+
+  const wanted = (category || '').toString().trim();
+  if (wanted) {
+    query.category = wanted;
+  } else {
+    query.category = { $ne: 'popup' };
+  }
+
+  const ads = await Advertisement.find(query).sort(bySequence).lean();
+
+  // Scheduling is optional on an advertisement; an absent bound means "no
+  // bound", not "expired".
+  const live = ads.filter(
+    (ad) =>
+      (!ad.start_date || new Date(ad.start_date) <= now) &&
+      (!ad.end_date || new Date(ad.end_date) >= now)
+  );
+
+  if (live.length === 0) return null;
+
+  return section({
+    id: `advertisements-${wanted || 'all'}`,
+    type: SECTION_TYPES.BANNER_STRIP,
+    sourceSequence: 0,
+    sourceCollection: 'advertisements',
+    title,
+    items: live,
   });
 }
 
@@ -176,7 +267,15 @@ async function heroCarousel(storeCode) {
  * Split from the fetching so the layout — the part with all the sequencing
  * rules — can be tested without a database.
  */
-function assembleFeed({ popular = [], seasonal = [], bestSellers = [], hero = null } = {}) {
+function assembleFeed({
+  popular = [],
+  seasonal = [],
+  bestSellers = [],
+  topSellers = [],
+  hero = null,
+  mid = null,
+  ads = null,
+} = {}) {
   const popularBySeq = bySequenceMap(popular);
   const bestSellerBySeq = bySequenceMap(bestSellers);
 
@@ -190,6 +289,7 @@ function assembleFeed({ popular = [], seasonal = [], bestSellers = [], hero = nu
         id: strip._id,
         type: SECTION_TYPES.CATEGORY_STRIP,
         sourceSequence: 1,
+        sourceCollection: 'popular_categories',
         title: strip.title,
         description: strip.description,
         style: styleOf(strip),
@@ -213,6 +313,7 @@ function assembleFeed({ popular = [], seasonal = [], bestSellers = [], hero = nu
           id: popularDoc._id,
           type: SECTION_TYPES.CATEGORY_GRID,
           sourceSequence: popularSeq,
+          sourceCollection: 'popular_categories',
           title: popularDoc.title,
           description: popularDoc.description,
           style: styleOf(popularDoc),
@@ -229,6 +330,7 @@ function assembleFeed({ popular = [], seasonal = [], bestSellers = [], hero = nu
           id: bestSellerDoc._id,
           type: SECTION_TYPES.PRODUCT_RAIL,
           sourceSequence: bestSellerSeq,
+          sourceCollection: 'best_sellers',
           title: bestSellerDoc.title,
           description: bestSellerDoc.description,
           style: styleOf(bestSellerDoc),
@@ -242,9 +344,37 @@ function assembleFeed({ popular = [], seasonal = [], bestSellers = [], hero = nu
     if (i < OFFER_SLOTS) {
       sections.push(personalizedSection({ type: SECTION_TYPES.OFFER_STRIP, index: i }));
     }
+
+    // Mid-page banners, once, after the first block. A banner break belongs
+    // between merchandising blocks rather than at the very bottom, where the
+    // click-through would not repay the space.
+    if (i === 0 && mid) sections.push(mid);
   }
 
-  // 4. Seasonal picks.
+  // 4. Top-seller rails, after the interleaved block.
+  const topSellerRails = topSellers.slice(0, TOP_SELLER_SLOTS);
+  topSellerRails.forEach((doc) => {
+    const items = doc.products || [];
+    if (items.length === 0) return;
+
+    sections.push(
+      section({
+        id: doc._id,
+        type: SECTION_TYPES.PRODUCT_RAIL,
+        sourceSequence: Number(doc.sequence) || 0,
+        sourceCollection: 'top_sellers',
+        title: doc.title,
+        description: doc.description,
+        style: styleOf(doc),
+        items,
+      })
+    );
+  });
+
+  // 5. Advertisements.
+  if (ads) sections.push(ads);
+
+  // 6. Seasonal picks.
   const seasonalFirst = seasonal[0];
   if (seasonalFirst) {
     sections.push(
@@ -252,6 +382,7 @@ function assembleFeed({ popular = [], seasonal = [], bestSellers = [], hero = nu
         id: seasonalFirst._id,
         type: SECTION_TYPES.SEASONAL_PICKS,
         sourceSequence: Number(seasonalFirst.sequence) || 1,
+        sourceCollection: 'seasonal_categories',
         title: seasonalFirst.title,
         description: seasonalFirst.description,
         style: styleOf(seasonalFirst),
@@ -273,13 +404,15 @@ function assembleFeed({ popular = [], seasonal = [], bestSellers = [], hero = nu
 async function buildHomeFeed({ storeCode, now = new Date() } = {}) {
   const query = storeQuery(storeCode);
 
-  const [popularDocs, seasonalDocs, bestSellerDocs, topSellerDocs, hero, layout] =
+  const [popularDocs, seasonalDocs, bestSellerDocs, topSellerDocs, hero, mid, ads, layout] =
     await Promise.all([
       PopularCategory.find(query).sort(bySequence).lean(),
       SeasonalCategory.find(query).sort(bySequence).lean(),
       BestSeller.find(query).sort(bySequence).lean(),
       TopSeller.find(query).sort(bySequence).lean(),
       heroCarousel(storeCode),
+      midBanners(storeCode),
+      advertisementSection({ storeCode, now }),
       HomeSection.findRenderable({ storeCode, now }),
     ]);
 
@@ -294,10 +427,19 @@ async function buildHomeFeed({ storeCode, now = new Date() } = {}) {
   // and gets the default arrangement — so adopting the builder is opt-in and
   // reversible by deleting the documents.
   if (Array.isArray(layout) && layout.length > 0) {
-    return assembleFromLayout({ layout, popular, seasonal, bestSellers, topSellers, hero });
+    return assembleFromLayout({
+      layout,
+      popular,
+      seasonal,
+      bestSellers,
+      topSellers,
+      hero,
+      mid,
+      ads,
+    });
   }
 
-  return assembleFeed({ popular, seasonal, bestSellers, hero });
+  return assembleFeed({ popular, seasonal, bestSellers, topSellers, hero, mid, ads });
 }
 
 /**
@@ -307,11 +449,17 @@ async function buildHomeFeed({ storeCode, now = new Date() } = {}) {
  * says which one, in what position. A section pointing at a document that has
  * since been deleted is dropped rather than rendered empty.
  */
-function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSellers = [], topSellers = [], hero = null } = {}) {
+function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSellers = [], topSellers = [], hero = null, mid = null, ads = null } = {}) {
   const popularBySeq = bySequenceMap(popular);
   const seasonalBySeq = bySequenceMap(seasonal);
   const bestSellerBySeq = bySequenceMap(bestSellers);
   const topSellerBySeq = bySequenceMap(topSellers);
+
+  // Banner placements a layout row can point at, by the panel's section_name.
+  const bannersByPlacement = new Map([
+    [BANNER_SECTIONS.HERO, hero],
+    [BANNER_SECTIONS.MID, mid],
+  ]);
 
   const sections = [];
 
@@ -333,26 +481,62 @@ function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSell
       return;
     }
 
-    if (type === SECTION_TYPES.HERO_CAROUSEL) {
-      if (hero) {
+    const collection = (entry.source && entry.source.collection_name) || 'none';
+    const config = entry.config || {};
+
+    // Banner-backed sections. The row picks its placement with
+    // `config.section_name`; hero rows default to the top placement and
+    // banner strips to the middle one, so an existing row keeps its meaning.
+    if (type === SECTION_TYPES.HERO_CAROUSEL || collection === 'banners') {
+      const placement =
+        (config.section_name || '').toString().trim() ||
+        (type === SECTION_TYPES.BANNER_STRIP ? BANNER_SECTIONS.MID : BANNER_SECTIONS.HERO);
+      const banners = bannersByPlacement.get(placement);
+
+      if (banners) {
         sections.push({
-          ...hero,
+          ...banners,
           ...campaignMeta(entry),
-          id: String(entry._id || hero.id),
-          title: entry.title || hero.title,
+          type,
+          id: String(entry._id || banners.id),
+          title: entry.title || banners.title,
+          style: { background_color: (entry.style && entry.style.background_color) || '' },
         });
       }
       return;
     }
 
-    const collection = (entry.source && entry.source.collection_name) || 'none';
+    // Advertisement-backed sections. `ads` is prefetched for the default
+    // category set; a row asking for a different category gets nothing rather
+    // than the wrong creatives, since the fetch already happened.
+    if (collection === 'advertisements') {
+      const wanted = (config.category || '').toString().trim();
+      const matches = !wanted || (ads && ads.id === `advertisements-${wanted}`);
+
+      if (ads && matches) {
+        sections.push({
+          ...ads,
+          ...campaignMeta(entry),
+          type,
+          id: String(entry._id || ads.id),
+          title: entry.title || ads.title,
+          style: { background_color: (entry.style && entry.style.background_color) || '' },
+        });
+      }
+      return;
+    }
 
     let doc = null;
     let items = [];
+    // What the row actually resolved to, which is not always what it asked
+    // for: an untyped product_rail falls back to best_sellers. The client is
+    // told the resolved collection, not the requested one.
+    let resolvedCollection = collection;
 
     if (collection === 'best_sellers' || (type === SECTION_TYPES.PRODUCT_RAIL && collection === 'none')) {
       doc = bestSellerBySeq.get(sequence);
       items = doc ? doc.products || [] : [];
+      resolvedCollection = 'best_sellers';
     } else if (collection === 'top_sellers') {
       doc = topSellerBySeq.get(sequence);
       items = doc ? doc.products || [] : [];
@@ -362,6 +546,7 @@ function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSell
     } else {
       doc = popularBySeq.get(sequence);
       items = doc ? doc.subcategories || [] : [];
+      resolvedCollection = 'popular_categories';
     }
 
     // The source document was deleted or deactivated; a heading with nothing
@@ -373,11 +558,12 @@ function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSell
         id: entry._id,
         type,
         sourceSequence: sequence,
+        sourceCollection: resolvedCollection,
         title: entry.title || doc.title,
         description: doc.description,
         style: {
           background_color:
-            (entry.style && entry.style.background_color) || doc.background_color || '',
+            (entry.style && entry.style.background_color) || styleOf(doc).background_color,
         },
         items,
       }),
@@ -395,10 +581,8 @@ module.exports = {
   enrichProducts,
   SCHEMA_VERSION,
   SECTION_TYPES,
+  BANNER_SECTIONS,
   BEST_SELLER_SLOTS,
   OFFER_SLOTS,
-  // Exported for a Phase 2 layout builder that will offer top-sellers as a
-  // product_rail source; unused by the seeded layout so Phase 1 stays at
-  // visual parity.
-  TopSeller,
+  TOP_SELLER_SLOTS,
 };

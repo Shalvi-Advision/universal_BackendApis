@@ -9,6 +9,8 @@
 const SECTION_TYPES = [
   // Phase 1 — parity with the layout the app hardcoded.
   'hero_carousel',
+  // A second banner placement, and how advertisements reach the home screen.
+  'banner_strip',
   'category_strip',
   'category_grid',
   'product_rail',

@@ -8,7 +8,12 @@
 // regression.
 
 const assert = require('assert');
-const { assembleFeed, assembleFromLayout, SECTION_TYPES } = require('../utils/homeFeedService');
+const {
+  assembleFeed,
+  assembleFromLayout,
+  SECTION_TYPES,
+  TOP_SELLER_SLOTS,
+} = require('../utils/homeFeedService');
 
 const popularSection = (sequence) => ({
   _id: `popular-${sequence}`,
@@ -42,6 +47,38 @@ const heroSection = {
   style: {},
   personalized: false,
   items: [{ image_url: 'https://cdn/banner.png' }],
+};
+
+// The top_sellers collection spells its colour differently from every other
+// collection, which is exactly what makes it worth a fixture of its own.
+const topSellerSection = (sequence) => ({
+  _id: `top-${sequence}`,
+  sequence,
+  title: `Top ${sequence}`,
+  bg_color: '#ABCDEF',
+  products: [{ p_code: `t${sequence}`, product_details: { p_code: `t${sequence}` } }],
+});
+
+const midSection = {
+  id: 'home_middle',
+  type: SECTION_TYPES.BANNER_STRIP,
+  source: { sequence: 0, collection_name: 'banners' },
+  title: '',
+  description: '',
+  style: {},
+  personalized: false,
+  items: [{ image_url: 'https://cdn/mid.png' }],
+};
+
+const adsSection = {
+  id: 'advertisements-all',
+  type: SECTION_TYPES.BANNER_STRIP,
+  source: { sequence: 0, collection_name: 'advertisements' },
+  title: '',
+  description: '',
+  style: {},
+  personalized: false,
+  items: [{ banner_url: 'https://cdn/ad.png' }],
 };
 
 const fullFeed = () =>
@@ -159,14 +196,17 @@ test('background colour and title reach the client', () => {
 
 // ---- Phase 2: admin-defined layout ----
 
-const layoutEntry = (type, { sequence = null, collection = 'none', title = '', id } = {}) => ({
+const layoutEntry = (
+  type,
+  { sequence = null, collection = 'none', title = '', id, config = {} } = {}
+) => ({
   _id: id || `layout-${type}-${sequence ?? 0}`,
   type,
   title,
   sequence: 0,
   source: { collection_name: collection, sequence },
   style: {},
-  config: {},
+  config,
 });
 
 test('layout order wins over the built-in arrangement', () => {
@@ -260,6 +300,166 @@ test('the same layout repeats a type as many times as it likes', () => {
 
   assert.strictEqual(feed.length, 2);
   assert.deepStrictEqual(feed.map((s) => s.id), ['a', 'b']);
+});
+
+// ---- all six admin collections reach the home screen ----
+//
+// Each of these is a collection the panel has always been able to edit but
+// whose content never appeared on the phone.
+
+test('top sellers get their own rails in the default layout', () => {
+  const feed = assembleFeed({
+    popular: [1, 2, 3, 4, 5].map(popularSection),
+    bestSellers: [1, 2, 3, 4].map(bestSellerSection),
+    topSellers: [topSellerSection(1), topSellerSection(2)],
+    seasonal: [seasonalSection(1)],
+    hero: heroSection,
+  });
+
+  const rails = feed.filter((s) => s.source.collection_name === 'top_sellers');
+  assert.strictEqual(rails.length, 2);
+  // After the interleaved best-seller block, before seasonal picks.
+  const lastBest = feed.map((s) => s.source.collection_name).lastIndexOf('best_sellers');
+  assert.ok(feed.indexOf(rails[0]) > lastBest);
+});
+
+test('a top-seller rail with no products is not rendered empty', () => {
+  const empty = { ...topSellerSection(1), products: [] };
+  const feed = assembleFeed({ topSellers: [empty] });
+
+  assert.strictEqual(feed.filter((s) => s.source.collection_name === 'top_sellers').length, 0);
+});
+
+test('only TOP_SELLER_SLOTS rails are drawn however many exist', () => {
+  const feed = assembleFeed({
+    topSellers: [1, 2, 3, 4, 5].map(topSellerSection),
+  });
+
+  assert.strictEqual(
+    feed.filter((s) => s.source.collection_name === 'top_sellers').length,
+    TOP_SELLER_SLOTS
+  );
+});
+
+test("a top seller's bg_color reaches the client as background_color", () => {
+  // The collection spells it bg_color; every other one uses background_color.
+  const feed = assembleFeed({ topSellers: [topSellerSection(1)] });
+  const rail = feed.find((s) => s.source.collection_name === 'top_sellers');
+
+  assert.strictEqual(rail.style.background_color, '#ABCDEF');
+});
+
+test('product rails say which collection they came from', () => {
+  // A best-seller rail and a top-seller rail can share a sequence, so the
+  // client cannot tell them apart without this and would fetch the wrong one.
+  const feed = assembleFeed({
+    bestSellers: [bestSellerSection(1)],
+    topSellers: [topSellerSection(1)],
+  });
+
+  const rails = feed.filter((s) => s.type === SECTION_TYPES.PRODUCT_RAIL);
+  assert.deepStrictEqual(
+    rails.map((s) => s.source.collection_name),
+    ['best_sellers', 'top_sellers']
+  );
+  assert.strictEqual(rails[0].source.sequence, rails[1].source.sequence);
+});
+
+test('mid-page banners are placed between merchandising blocks', () => {
+  const feed = assembleFeed({
+    popular: [1, 2, 3, 4, 5].map(popularSection),
+    bestSellers: [1, 2, 3, 4].map(bestSellerSection),
+    hero: heroSection,
+    mid: midSection,
+  });
+
+  const types = feed.map((s) => s.type);
+  const midIndex = feed.findIndex((s) => s.id === 'home_middle');
+
+  assert.ok(midIndex > types.indexOf(SECTION_TYPES.HERO_CAROUSEL));
+  assert.strictEqual(feed[midIndex].type, SECTION_TYPES.BANNER_STRIP);
+  // Exactly once, not once per interleaved pair.
+  assert.strictEqual(feed.filter((s) => s.id === 'home_middle').length, 1);
+});
+
+test('a tenant with no mid-page banners is unaffected', () => {
+  const withMid = assembleFeed({ popular: [popularSection(1)], mid: null });
+
+  assert.strictEqual(withMid.filter((s) => s.type === SECTION_TYPES.BANNER_STRIP).length, 0);
+});
+
+test('advertisements appear as their own strip', () => {
+  const feed = assembleFeed({ popular: [popularSection(1)], ads: adsSection });
+
+  const strip = feed.find((s) => s.source.collection_name === 'advertisements');
+  assert.ok(strip, 'advertisements should render');
+  assert.strictEqual(strip.type, SECTION_TYPES.BANNER_STRIP);
+});
+
+test('a layout row can point a banner strip at a named placement', () => {
+  const feed = assembleFromLayout({
+    layout: [
+      layoutEntry(SECTION_TYPES.BANNER_STRIP, {
+        collection: 'banners',
+        config: { section_name: 'home_middle' },
+        id: 'row',
+      }),
+    ],
+    hero: heroSection,
+    mid: midSection,
+  });
+
+  assert.strictEqual(feed.length, 1);
+  // The middle placement, not the hero's banners.
+  assert.deepStrictEqual(feed[0].items, midSection.items);
+});
+
+test('a hero row still defaults to the top placement', () => {
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.HERO_CAROUSEL, { id: 'row' })],
+    hero: heroSection,
+    mid: midSection,
+  });
+
+  assert.deepStrictEqual(feed[0].items, heroSection.items);
+});
+
+test('a layout row pointing at a placement with no banners is dropped', () => {
+  const feed = assembleFromLayout({
+    layout: [
+      layoutEntry(SECTION_TYPES.BANNER_STRIP, {
+        collection: 'banners',
+        config: { section_name: 'home_middle' },
+      }),
+    ],
+    hero: heroSection,
+    mid: null,
+  });
+
+  assert.strictEqual(feed.length, 0);
+});
+
+test('a layout row pointing at advertisements resolves', () => {
+  // This previously fell through to popular_categories and was dropped, so an
+  // advertisements row in the builder rendered nothing with no explanation.
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.BANNER_STRIP, { collection: 'advertisements', id: 'row' })],
+    ads: adsSection,
+  });
+
+  assert.strictEqual(feed.length, 1);
+  assert.deepStrictEqual(feed[0].items, adsSection.items);
+});
+
+test('a layout keeps the resolved collection, not the requested one', () => {
+  // An untyped product rail falls back to best_sellers; the client is told
+  // what it actually got.
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.PRODUCT_RAIL, { sequence: 1, collection: 'none' })],
+    bestSellers: [bestSellerSection(1)],
+  });
+
+  assert.strictEqual(feed[0].source.collection_name, 'best_sellers');
 });
 
 // ----------------------------------------------------------------------

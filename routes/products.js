@@ -105,11 +105,22 @@ router.post('/search-products', async (req, res, next) => {
       });
     }
     
-    // Create search query with partial matching (case insensitive)
+    // Create search query with partial matching (case insensitive).
+    //
+    // Matches the brand as well as the product name: shoppers search brands
+    // ("Amul") at least as often as product names, and the home screen's brand
+    // tiles search by brand name, which matched nothing while this looked at
+    // product_name alone.
+    //
+    // Escaped because a search term is user input — an unescaped "(" is an
+    // invalid regex and would 500 the whole search.
+    const escaped = search_term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = { $regex: escaped, $options: 'i' };
+
     const searchQuery = {
       store_code: store_code.trim(),
       pcode_status: 'Y',
-      product_name: { $regex: search_term.trim(), $options: 'i' } // Case insensitive partial match
+      $or: [{ product_name: pattern }, { brand_name: pattern }]
     };
     
     // Add optional filters if provided

@@ -81,6 +81,28 @@ const adsSection = {
   items: [{ banner_url: 'https://cdn/ad.png' }],
 };
 
+const couponsSection = {
+  id: 'coupons',
+  type: SECTION_TYPES.COUPON_STRIP,
+  source: { sequence: 0, collection_name: 'offers' },
+  title: '',
+  description: '',
+  style: {},
+  personalized: false,
+  items: [{ id: 'o1', title: 'Save 50', discount_amount: 50, min_cart_value: 499 }],
+};
+
+const brandsSection = {
+  id: 'brands',
+  type: SECTION_TYPES.BRAND_STRIP,
+  source: { sequence: 0, collection_name: 'products' },
+  title: '',
+  description: '',
+  style: {},
+  personalized: false,
+  items: [{ id: 'Amul', brand_name: 'Amul', image_url: 'https://cdn/amul.png' }],
+};
+
 const fullFeed = () =>
   assembleFeed({
     popular: [1, 2, 3, 4, 5].map(popularSection),
@@ -460,6 +482,79 @@ test('a layout keeps the resolved collection, not the requested one', () => {
   });
 
   assert.strictEqual(feed[0].source.collection_name, 'best_sellers');
+});
+
+// ---- derived sections: coupons and brands ----
+
+test('coupons sit near the top, right after the hero', () => {
+  const feed = assembleFeed({
+    popular: [popularSection(1)],
+    hero: heroSection,
+    coupons: couponsSection,
+  });
+
+  const types = feed.map((s) => s.type);
+  const couponIndex = types.indexOf(SECTION_TYPES.COUPON_STRIP);
+
+  assert.ok(couponIndex > types.indexOf(SECTION_TYPES.HERO_CAROUSEL));
+  // A saving buried at the bottom is a reason to feel cheated, not to scroll.
+  assert.ok(couponIndex < types.indexOf(SECTION_TYPES.OFFER_STRIP));
+});
+
+test('a tenant with no coupons or brands is unaffected', () => {
+  const feed = assembleFeed({ popular: [popularSection(1)], coupons: null, brands: null });
+  const types = feed.map((s) => s.type);
+
+  assert.ok(!types.includes(SECTION_TYPES.COUPON_STRIP));
+  assert.ok(!types.includes(SECTION_TYPES.BRAND_STRIP));
+});
+
+test('brands appear as their own strip', () => {
+  const feed = assembleFeed({ popular: [popularSection(1)], brands: brandsSection });
+  const strip = feed.find((s) => s.type === SECTION_TYPES.BRAND_STRIP);
+
+  assert.ok(strip);
+  assert.strictEqual(strip.items[0].brand_name, 'Amul');
+});
+
+test('a layout row resolves coupons by type alone', () => {
+  // Coupons are derived from the offers this store already has, so the row has
+  // no document to point at — resolving by sequence would drop it.
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.COUPON_STRIP, { id: 'row' })],
+    coupons: couponsSection,
+  });
+
+  assert.strictEqual(feed.length, 1);
+  assert.deepStrictEqual(feed[0].items, couponsSection.items);
+});
+
+test('a layout row resolves brands by type alone', () => {
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.BRAND_STRIP, { id: 'row' })],
+    brands: brandsSection,
+  });
+
+  assert.strictEqual(feed.length, 1);
+  assert.deepStrictEqual(feed[0].items, brandsSection.items);
+});
+
+test('a coupon row with no live offers is dropped, not rendered empty', () => {
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.COUPON_STRIP, { id: 'row' })],
+    coupons: null,
+  });
+
+  assert.strictEqual(feed.length, 0);
+});
+
+test('a layout title overrides the derived section title', () => {
+  const feed = assembleFromLayout({
+    layout: [layoutEntry(SECTION_TYPES.BRAND_STRIP, { id: 'row', title: 'Top brands' })],
+    brands: brandsSection,
+  });
+
+  assert.strictEqual(feed[0].title, 'Top brands');
 });
 
 // ----------------------------------------------------------------------

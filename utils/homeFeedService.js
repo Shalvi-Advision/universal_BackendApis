@@ -23,6 +23,7 @@ const BestSeller = require('../models/BestSeller');
 const TopSeller = require('../models/TopSeller');
 const Banner = require('../models/Banner');
 const Advertisement = require('../models/Advertisement');
+const Offer = require('../models/Offer');
 const HomeSection = require('../models/HomeSection');
 const ProductMaster = require('../models/ProductMaster');
 
@@ -38,6 +39,8 @@ const SCHEMA_VERSION = 1;
 const SECTION_TYPES = {
   HERO_CAROUSEL: 'hero_carousel',
   BANNER_STRIP: 'banner_strip',
+  COUPON_STRIP: 'coupon_strip',
+  BRAND_STRIP: 'brand_strip',
   CATEGORY_STRIP: 'category_strip',
   CATEGORY_GRID: 'category_grid',
   PRODUCT_RAIL: 'product_rail',
@@ -262,6 +265,113 @@ async function advertisementSection({ storeCode, category, title = '', now = new
 }
 
 /**
+ * Cart-level coupons as a renderable section.
+ *
+ * Public on purpose: a coupon reads the same for every shopper, so it travels
+ * in the cacheable feed. Only `cart_discount` offers qualify — `product_deal`
+ * offers are individual products and already have their own rails.
+ */
+async function couponSection({ storeCode, now = new Date(), limit = 10 } = {}) {
+  const trimmed = (storeCode || '').toString().trim();
+  const query = {
+    is_active: true,
+    offer_type: 'cart_discount',
+    valid_from: { $lte: now },
+    $and: [
+      {
+        $or: [
+          { valid_until: { $exists: false } },
+          { valid_until: null },
+          { valid_until: { $gte: now } },
+        ],
+      },
+    ],
+  };
+
+  // An offer with no store codes is tenant-wide; one with codes is scoped.
+  if (trimmed) {
+    query.$and.push({
+      $or: [{ store_codes: trimmed }, { store_codes: { $size: 0 } }, { store_codes: null }],
+    });
+  }
+
+  const offers = await Offer.find(query)
+    .sort({ priority: -1, min_cart_value: 1 })
+    .limit(limit)
+    .lean();
+
+  if (offers.length === 0) return null;
+
+  return section({
+    id: 'coupons',
+    type: SECTION_TYPES.COUPON_STRIP,
+    sourceSequence: 0,
+    sourceCollection: 'offers',
+    items: offers.map((offer) => ({
+      id: String(offer._id),
+      title: offer.title || '',
+      description: offer.description || '',
+      discount_amount: offer.discount_amount || 0,
+      discount_type: offer.discount_type || 'flat',
+      min_cart_value: offer.min_cart_value || 0,
+      max_discount: offer.max_discount ?? null,
+      valid_until: offer.valid_until ? new Date(offer.valid_until).toISOString() : null,
+    })),
+  });
+}
+
+/**
+ * Brands stocked by this store, with a representative product image.
+ *
+ * Derived from the catalogue rather than a collection of its own: there is no
+ * brand registry, and inventing one would need every tenant to re-enter data
+ * that already exists on their products.
+ */
+async function brandSection({ storeCode, limit = 12 } = {}) {
+  const trimmed = (storeCode || '').toString().trim();
+  const match = {
+    pcode_status: 'Y',
+    brand_name: { $nin: [null, ''] },
+  };
+  if (trimmed) match.store_code = trimmed;
+
+  const brands = await ProductMaster.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$brand_name',
+        // The catalogue holds no brand logos, so the first product image
+        // stands in for one.
+        image_url: { $first: '$pcode_img' },
+        product_count: { $sum: 1 },
+      },
+    },
+    // Most-stocked first: a brand with three products is not a brand tile.
+    { $sort: { product_count: -1, _id: 1 } },
+    { $limit: limit },
+  ]);
+
+  const items = brands
+    .filter((brand) => brand._id && String(brand._id).trim())
+    .map((brand) => ({
+      id: String(brand._id),
+      brand_name: String(brand._id).trim(),
+      image_url: brand.image_url || '',
+      product_count: brand.product_count,
+    }));
+
+  if (items.length === 0) return null;
+
+  return section({
+    id: 'brands',
+    type: SECTION_TYPES.BRAND_STRIP,
+    sourceSequence: 0,
+    sourceCollection: 'products',
+    items,
+  });
+}
+
+/**
  * Arranges already-fetched, already-enriched documents into the ordered feed.
  *
  * Split from the fetching so the layout — the part with all the sequencing
@@ -275,6 +385,8 @@ function assembleFeed({
   hero = null,
   mid = null,
   ads = null,
+  coupons = null,
+  brands = null,
 } = {}) {
   const popularBySeq = bySequenceMap(popular);
   const bestSellerBySeq = bySequenceMap(bestSellers);
@@ -298,8 +410,10 @@ function assembleFeed({
     );
   }
 
-  // 2. Hero banners.
+  // 2. Hero banners, then any coupons. A saving stated up front is a reason
+  //    to keep scrolling; stated at the bottom it is a reason to feel cheated.
   if (hero) sections.push(hero);
+  if (coupons) sections.push(coupons);
 
   // 3. Popular category grids, best-seller rails and offer slots interleaved,
   //    exactly as the app lays them out today.
@@ -371,7 +485,8 @@ function assembleFeed({
     );
   });
 
-  // 5. Advertisements.
+  // 5. Brands, then advertisements.
+  if (brands) sections.push(brands);
   if (ads) sections.push(ads);
 
   // 6. Seasonal picks.
@@ -404,17 +519,29 @@ function assembleFeed({
 async function buildHomeFeed({ storeCode, now = new Date() } = {}) {
   const query = storeQuery(storeCode);
 
-  const [popularDocs, seasonalDocs, bestSellerDocs, topSellerDocs, hero, mid, ads, layout] =
-    await Promise.all([
-      PopularCategory.find(query).sort(bySequence).lean(),
-      SeasonalCategory.find(query).sort(bySequence).lean(),
-      BestSeller.find(query).sort(bySequence).lean(),
-      TopSeller.find(query).sort(bySequence).lean(),
-      heroCarousel(storeCode),
-      midBanners(storeCode),
-      advertisementSection({ storeCode, now }),
-      HomeSection.findRenderable({ storeCode, now }),
-    ]);
+  const [
+    popularDocs,
+    seasonalDocs,
+    bestSellerDocs,
+    topSellerDocs,
+    hero,
+    mid,
+    ads,
+    coupons,
+    brands,
+    layout,
+  ] = await Promise.all([
+    PopularCategory.find(query).sort(bySequence).lean(),
+    SeasonalCategory.find(query).sort(bySequence).lean(),
+    BestSeller.find(query).sort(bySequence).lean(),
+    TopSeller.find(query).sort(bySequence).lean(),
+    heroCarousel(storeCode),
+    midBanners(storeCode),
+    advertisementSection({ storeCode, now }),
+    couponSection({ storeCode, now }),
+    brandSection({ storeCode }),
+    HomeSection.findRenderable({ storeCode, now }),
+  ]);
 
   const [popular, seasonal, bestSellers, topSellers] = await Promise.all([
     enrichPopularCategorySections(popularDocs),
@@ -436,10 +563,22 @@ async function buildHomeFeed({ storeCode, now = new Date() } = {}) {
       hero,
       mid,
       ads,
+      coupons,
+      brands,
     });
   }
 
-  return assembleFeed({ popular, seasonal, bestSellers, topSellers, hero, mid, ads });
+  return assembleFeed({
+    popular,
+    seasonal,
+    bestSellers,
+    topSellers,
+    hero,
+    mid,
+    ads,
+    coupons,
+    brands,
+  });
 }
 
 /**
@@ -449,7 +588,7 @@ async function buildHomeFeed({ storeCode, now = new Date() } = {}) {
  * says which one, in what position. A section pointing at a document that has
  * since been deleted is dropped rather than rendered empty.
  */
-function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSellers = [], topSellers = [], hero = null, mid = null, ads = null } = {}) {
+function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSellers = [], topSellers = [], hero = null, mid = null, ads = null, coupons = null, brands = null } = {}) {
   const popularBySeq = bySequenceMap(popular);
   const seasonalBySeq = bySequenceMap(seasonal);
   const bestSellerBySeq = bySequenceMap(bestSellers);
@@ -500,6 +639,34 @@ function assembleFromLayout({ layout = [], popular = [], seasonal = [], bestSell
           type,
           id: String(entry._id || banners.id),
           title: entry.title || banners.title,
+          style: { background_color: (entry.style && entry.style.background_color) || '' },
+        });
+      }
+      return;
+    }
+
+    // Sections whose content is derived rather than configured: there is no
+    // document to point at, so the type alone resolves them.
+    if (type === SECTION_TYPES.COUPON_STRIP) {
+      if (coupons) {
+        sections.push({
+          ...coupons,
+          ...campaignMeta(entry),
+          id: String(entry._id || coupons.id),
+          title: entry.title || coupons.title,
+          style: { background_color: (entry.style && entry.style.background_color) || '' },
+        });
+      }
+      return;
+    }
+
+    if (type === SECTION_TYPES.BRAND_STRIP) {
+      if (brands) {
+        sections.push({
+          ...brands,
+          ...campaignMeta(entry),
+          id: String(entry._id || brands.id),
+          title: entry.title || brands.title,
           style: { background_color: (entry.style && entry.style.background_color) || '' },
         });
       }

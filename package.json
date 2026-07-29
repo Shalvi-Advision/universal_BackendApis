@@ -12,6 +12,7 @@
     "test": "node tests/test_api.js",
     "test:api": "jest",
     "create-admin": "node scripts/create_admin_users.js",
+    "set-admin-passwords": "node scripts/set_admin_passwords.js",
     "migrate-permissions": "node scripts/migrate_admin_permissions.js",
     "update-postman": "node scripts/update-postman.js"
   },

@@ -8,6 +8,14 @@ const userSchema = new mongoose.Schema({
     unique: true,
     match: [/^[6-9]\d{9}$/, 'Please enter a valid 10-digit mobile number']
   },
+  // Admin-panel credential. Customers keep using OTP and never set this, so
+  // it stays optional. Never selected by default — an admin list query must
+  // not be able to leak hashes.
+  password: {
+    type: String,
+    required: false,
+    select: false
+  },
   otp: {
     type: String,
     required: false
@@ -141,7 +149,15 @@ const userSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
+  // Defensive: even when a query explicitly selects +password, serialising the
+  // document must never emit the hash.
+  toJSON: {
+    virtuals: true,
+    transform: (doc, ret) => {
+      delete ret.password;
+      return ret;
+    }
+  },
   toObject: { virtuals: true }
 });
 
@@ -149,6 +165,32 @@ const userSchema = new mongoose.Schema({
 // Note: mobile field already has unique: true, so index is automatically created
 userSchema.index({ otp: 1, otpExpiresAt: 1 });
 userSchema.index({ lastActiveAt: 1 });
+
+// Hash the password whenever it is set to a new plaintext value. Guarded by
+// isModified so an ordinary user.save() (session touch, profile edit) never
+// re-hashes an already-hashed value.
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password') || !this.password) {
+    return next();
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Compare a plaintext password against the stored hash. Requires the document
+// to have been loaded with .select('+password').
+userSchema.methods.comparePassword = async function (candidate) {
+  if (!this.password || !candidate) {
+    return false;
+  }
+  return bcrypt.compare(candidate, this.password);
+};
 
 // Virtual for checking if OTP is expired
 userSchema.virtual('isOtpExpired').get(function () {

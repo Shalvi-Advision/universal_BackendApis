@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const sms = require('../utils/sms');
+const { getTenantDb, DEFAULT_DB_NAME } = require('../config/database');
 
 // Generate JWT token
 const generateToken = (userId) => {
@@ -11,6 +12,115 @@ const generateToken = (userId) => {
       expiresIn: process.env.JWT_EXPIRE || '30d'
     }
   );
+};
+
+// Locate an admin by mobile, with the password hash selected.
+//
+// Mirrors findUserById in middleware/auth.js: admin accounts live in the
+// default (admin home) DB and may operate on any tenant, so if the request's
+// tenant DB has no such admin we fall back there. Customers are never returned
+// by this lookup — only role === 'admin' matches.
+const findAdminByMobile = async (mobile) => {
+  const tenantAdmin = await User.findOne({ mobile, role: 'admin' }).select('+password');
+  if (tenantAdmin) {
+    return tenantAdmin;
+  }
+
+  const homeDb = getTenantDb(DEFAULT_DB_NAME);
+  const HomeUser = homeDb.models.User;
+  if (!HomeUser) {
+    return null;
+  }
+
+  return HomeUser.findOne({ mobile, role: 'admin' }).select('+password');
+};
+
+// @desc    Admin panel login with mobile + password (no OTP / no SMS spend)
+// @route   POST /api/auth/admin-login
+// @access  Public
+const adminLogin = async (req, res) => {
+  try {
+    const { mobile, password } = req.body;
+
+    if (!mobile || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mobile number and password are required'
+      });
+    }
+
+    const mobileRegex = /^[6-9]\d{9}$/;
+    if (!mobileRegex.test(mobile)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid 10-digit mobile number'
+      });
+    }
+
+    const user = await findAdminByMobile(mobile);
+
+    // One generic message for "no such admin", "not an admin" and "wrong
+    // password" — otherwise this endpoint doubles as an admin-mobile oracle.
+    const invalid = () =>
+      res.status(401).json({
+        success: false,
+        message: 'Invalid mobile number or password'
+      });
+
+    if (!user) {
+      return invalid();
+    }
+
+    if (!user.password) {
+      return res.status(403).json({
+        success: false,
+        message: 'No password set for this admin account. Please contact a super admin.'
+      });
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return invalid();
+    }
+
+    // Password login proves account ownership, so an admin who never went
+    // through the OTP flow still satisfies the isVerified check in protect().
+    if (!user.isVerified) {
+      user.isVerified = true;
+    }
+
+    user.lastActiveAt = new Date();
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    const token = generateToken(user._id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        token,
+        user: {
+          id: user._id,
+          mobile: user.mobile,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isVerified: user.isVerified,
+          isSuperAdmin: user.isSuperAdmin || false,
+          allowed_project_codes: user.allowed_project_codes || [],
+          permissions: user.permissions || {}
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Admin Login Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Login failed',
+      error: error.message
+    });
+  }
 };
 
 // @desc    Send OTP to mobile number
@@ -349,6 +459,7 @@ const saveFcmToken = async (req, res) => {
 module.exports = {
   sendOtp,
   verifyOtp,
+  adminLogin,
   getProfile,
   updateProfile,
   logout,

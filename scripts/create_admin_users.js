@@ -11,6 +11,11 @@ const adminNumbers = [
     '+91 81080 53372'
 ];
 
+// The admin panel signs in with mobile + password, so an admin created without
+// one cannot log in at all. Existing passwords are left alone — re-run
+// scripts/set_admin_passwords.js to reset them.
+const DEFAULT_ADMIN_PASSWORD = 'Qwerty@1234';
+
 const createAdminUsers = async () => {
     try {
         await connectDB();
@@ -27,13 +32,17 @@ const createAdminUsers = async () => {
 
             console.log(`Processing ${mobile}...`);
 
-            let user = await User.findOne({ mobile });
+            let user = await User.findOne({ mobile }).select('+password');
 
             if (user) {
                 console.log(`User found for ${mobile}. Updating role to admin...`);
                 user.role = 'admin';
                 // Ensure verified if they are being made admin manually
                 if (!user.isVerified) user.isVerified = true;
+                if (!user.password) {
+                    user.password = DEFAULT_ADMIN_PASSWORD; // hashed by the pre-save hook
+                    console.log(`Set default admin password for ${mobile}.`);
+                }
                 await user.save();
                 console.log(`Updated ${mobile} to admin.`);
             } else {
@@ -42,7 +51,8 @@ const createAdminUsers = async () => {
                     mobile,
                     role: 'admin',
                     isVerified: true,
-                    name: 'Admin User' // Default name
+                    name: 'Admin User', // Default name
+                    password: DEFAULT_ADMIN_PASSWORD // hashed by the pre-save hook
                 });
                 console.log(`Created new admin user ${mobile}.`);
             }

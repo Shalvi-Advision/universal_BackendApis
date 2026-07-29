@@ -1,6 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { sendOtp, verifyOtp, getProfile, updateProfile, logout, isActive, saveFcmToken } = require('../controllers/auth');
+const { sendOtp, verifyOtp, adminLogin, getProfile, updateProfile, logout, isActive, saveFcmToken } = require('../controllers/auth');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
@@ -27,6 +27,17 @@ const verifyOtpValidation = [
     .withMessage('OTP must contain only numbers')
 ];
 
+const adminLoginValidation = [
+  body('mobile')
+    .isLength({ min: 10, max: 10 })
+    .withMessage('Mobile number must be exactly 10 digits')
+    .matches(/^[6-9]\d{9}$/)
+    .withMessage('Please enter a valid mobile number starting with 6-9'),
+  body('password')
+    .isLength({ min: 1 })
+    .withMessage('Password is required')
+];
+
 const updateProfileValidation = [
   body('name')
     .optional()
@@ -51,6 +62,11 @@ router.post('/send-otp', sendOtpValidation, sendOtp);
 // @desc    Verify OTP and get authentication token
 // @access  Public
 router.post('/verify-otp', verifyOtpValidation, verifyOtp);
+
+// @route   POST /api/auth/admin-login
+// @desc    Admin panel login with mobile + password (no OTP, no SMS spend)
+// @access  Public
+router.post('/admin-login', adminLoginValidation, adminLogin);
 
 // @route   GET /api/auth/profile
 // @desc    Get current user profile

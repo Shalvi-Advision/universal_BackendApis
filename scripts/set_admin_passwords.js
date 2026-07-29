@@ -36,14 +36,30 @@ const SYSTEM_DBS = new Set(['admin', 'local', 'config']);
 // registry in several deployments, so registry-only sweeps miss them.
 const discoverDbsWithUsers = async () => {
   const client = mongoose.connection.getClient();
-  const { databases } = await client.db().admin().listDatabases();
   const found = [];
+
+  let databases;
+  try {
+    ({ databases } = await client.db().admin().listDatabases());
+  } catch (error) {
+    // A least-privilege deployment user often cannot list databases. Not fatal:
+    // the caller still has the registry, the default DB and --dbs.
+    console.warn(
+      `Cannot enumerate databases (${error.message}). ` +
+      'Pass --dbs=name1,name2 to sweep specific databases.'
+    );
+    return found;
+  }
 
   for (const { name } of databases) {
     if (SYSTEM_DBS.has(name)) continue;
-    const collections = await client.db(name).listCollections({ name: 'users' }).toArray();
-    if (collections.length > 0) {
-      found.push(name);
+    try {
+      const collections = await client.db(name).listCollections({ name: 'users' }).toArray();
+      if (collections.length > 0) {
+        found.push(name);
+      }
+    } catch (error) {
+      console.warn(`Skipping ${name}: ${error.message}`);
     }
   }
 
@@ -58,10 +74,17 @@ const run = async () => {
   const dryRun = process.argv.includes('--dry-run');
   const scanAll = process.argv.includes('--scan-all');
 
+  // --dbs=Foo_DB,Bar_DB — explicit list, for clusters where the app user
+  // cannot enumerate databases.
+  const dbsArg = process.argv.find((a) => a.startsWith('--dbs='));
+  const explicitDbs = dbsArg
+    ? dbsArg.slice('--dbs='.length).split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+
   await connectDB();
 
   // Collect the DBs to sweep: the admin home DB + every registered tenant DB.
-  const dbNames = new Set([DEFAULT_DB_NAME]);
+  const dbNames = new Set([DEFAULT_DB_NAME, ...explicitDbs]);
   let registryCount = 0;
 
   if (!scanAll) {

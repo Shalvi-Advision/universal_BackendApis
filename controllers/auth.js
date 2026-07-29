@@ -20,19 +20,37 @@ const generateToken = (userId) => {
 // default (admin home) DB and may operate on any tenant, so if the request's
 // tenant DB has no such admin we fall back there. Customers are never returned
 // by this lookup — only role === 'admin' matches.
+//
+// The same admin mobile often exists in several tenant DBs, seeded at different
+// times, and only some of those copies have a password. Preferring the copy
+// that actually has one stops a password-less duplicate in the tenant DB from
+// masking the real credential in the home DB.
 const findAdminByMobile = async (mobile) => {
+  const candidates = [];
+
   const tenantAdmin = await User.findOne({ mobile, role: 'admin' }).select('+password');
   if (tenantAdmin) {
-    return tenantAdmin;
+    if (tenantAdmin.password) {
+      return tenantAdmin;
+    }
+    candidates.push(tenantAdmin);
   }
 
   const homeDb = getTenantDb(DEFAULT_DB_NAME);
   const HomeUser = homeDb.models.User;
-  if (!HomeUser) {
-    return null;
+  if (HomeUser) {
+    const homeAdmin = await HomeUser.findOne({ mobile, role: 'admin' }).select('+password');
+    if (homeAdmin) {
+      if (homeAdmin.password) {
+        return homeAdmin;
+      }
+      candidates.push(homeAdmin);
+    }
   }
 
-  return HomeUser.findOne({ mobile, role: 'admin' }).select('+password');
+  // Found the account but no copy has a password — return one so the caller can
+  // say so specifically rather than "invalid credentials".
+  return candidates[0] || null;
 };
 
 // @desc    Admin panel login with mobile + password (no OTP / no SMS spend)

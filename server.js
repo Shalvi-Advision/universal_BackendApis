@@ -18,6 +18,7 @@ const { UPLOAD_ROOT } = require('./config/mediaStorage');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { tenantResolver } = require('./middleware/tenant');
+const { warnIfTestOtpEnabled } = require('./utils/sms');
 
 // Swagger imports
 const swaggerUi = require('swagger-ui-express');
@@ -84,6 +85,11 @@ const homeAnalyticsRoutes = require('./routes/home-analytics');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+
+// Module-scoped so the process-level handlers below can close it. It used to be
+// a const inside startServer(), so `server.close()` in the unhandledRejection
+// handler threw ReferenceError instead of shutting down.
+let server;
 
 // Behind nginx — use real client IP for rate limiting
 app.set('trust proxy', 1);
@@ -181,12 +187,31 @@ app.options('*', cors((req, callback) => {
   });
 }));
 
-// Rate limiting - stricter for auth routes
+// Rate limiting - stricter for auth routes.
+//
+// The OTP is 4 digits (10k possibilities), so the old 1000-per-15-min ceiling
+// was not a meaningful brute-force barrier — a handful of windows covered the
+// whole keyspace. Credential and OTP submission now get their own tight limit,
+// counted per mobile number as well as per IP so one attacker rotating IPs
+// still cannot grind a single account.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // limit each IP to 1000 requests per windowMs for auth routes
+  max: 100,
   message: {
     error: 'Too many authentication attempts, please try again later.'
+  },
+  skip: shouldSkipRateLimit,
+});
+
+const credentialLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  keyGenerator: (req) => {
+    const mobile = (req.body && req.body.mobile) || '';
+    return `${getClientIp(req)}:${mobile}`;
+  },
+  message: {
+    error: 'Too many attempts for this account, please try again later.'
   },
   skip: shouldSkipRateLimit,
 });
@@ -255,6 +280,13 @@ app.use('/api', tenantResolver);
 app.use('/api/project-config', projectConfigRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/projects', projectsRoutes);
+// Tight per-account limits on the endpoints that accept a secret. Registered
+// before the /api/auth mount so they run first; express.json() has already
+// populated req.body by this point, which the key generator needs.
+app.use('/api/auth/send-otp', credentialLimiter);
+app.use('/api/auth/verify-otp', credentialLimiter);
+app.use('/api/auth/admin-login', credentialLimiter);
+
 app.use('/api/auth', authLimiter, authRoutes); // Apply stricter rate limiting to auth routes
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
@@ -297,8 +329,11 @@ const startServer = async () => {
   try {
     await connectDB();
 
+    // Loudly surface the fixed-OTP escape hatch if an operator left it on.
+    warnIfTestOtpEnabled();
+
     // Create HTTP server and attach Socket.io
-    const server = http.createServer(app);
+    server = http.createServer(app);
     const io = new Server(server, {
       cors: {
         origin: true,
@@ -356,18 +391,32 @@ const startServer = async () => {
   }
 };
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err, promise) => {
-  console.error('Unhandled Promise Rejection:', err.message);
+// Stop accepting connections, then exit. Falls back to a hard exit if the
+// server never came up or refuses to close within the grace period.
+const shutdown = (reason, err) => {
+  console.error(`${reason}:`, err?.stack || err?.message || err);
+
+  if (!server) {
+    return process.exit(1);
+  }
+
+  const force = setTimeout(() => process.exit(1), 10000);
+  force.unref();
+
   server.close(() => {
+    clearTimeout(force);
     process.exit(1);
   });
+};
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  shutdown('Unhandled Promise Rejection', err);
 });
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err.message);
-  process.exit(1);
+  shutdown('Uncaught Exception', err);
 });
 
 startServer();

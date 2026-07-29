@@ -1,340 +1,45 @@
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
-const Cart = require('../models/Cart');
-const AddressBook = require('../models/AddressBook');
-const DeliverySlot = require('../models/DeliverySlot');
-const PaymentMode = require('../models/PaymentMode');
-const Offer = require('../models/Offer');
 const AdminNotification = require('../models/AdminNotification');
 const { protect } = require('../middleware/auth');
+const { placeOrder } = require('../utils/orderService');
 const { createOrderPlacedNotification } = require('../utils/notificationService');
 
 /**
  * @route   POST /api/orders/place-order
- * @desc    Place a new order with validated cart, delivery, and payment information
+ * @desc    Place a new order. Every amount on the order is computed server-side
+ *          from the cart, catalogue, store and offers — the body only selects
+ *          which address / slot / payment mode / offer to apply.
  * @access  Private (requires JWT token)
  * @body    {
- *   "store_code": "AVB",
- *   "project_code": "PROJ001",
- *   "cart_validated": true,
+ *   "store_code": "PAG001",
  *   "delivery_slot_id": 1,
- *   "delivery_date": "2025-01-15",
+ *   "delivery_date": "2026-08-15",
  *   "address_id": "68f9fcfaa8873e89d5faf4f9",
  *   "payment_mode_id": 2,
  *   "order_notes": "Please handle with care",
- *   "payment_details": {
- *     "card_number": "**** **** **** 1234",
- *     "card_holder": "John Doe"
+ *   "offer_id": "...",            // optional
+ *   "deal_items": [...],          // optional
+ *   "payment_details": {          // required for online payment modes
+ *     "razorpay_order_id": "order_...",
+ *     "razorpay_payment_id": "pay_...",
+ *     "razorpay_signature": "..."
  *   }
  * }
  * @header  Authorization: Bearer <jwt_token>
+ * @header  X-Project-Code: <tenant code>
  */
 router.post('/place-order', protect, async (req, res, next) => {
   try {
-    const {
-      store_code,
-      project_code,
-      cart_validated = false,
-      delivery_slot_id,
-      delivery_date,
-      address_id,
-      payment_mode_id,
-      order_notes,
-      payment_details,
-      delivery_charges: clientDeliveryCharges,
-      delivery_distance,
-      offer_id,
-      deal_items
-    } = req.body;
-
-    // Validate required fields
-    if (!store_code || store_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'store_code is required'
-      });
-    }
-
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
-    if (!delivery_slot_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'delivery_slot_id is required'
-      });
-    }
-
-    if (!delivery_date) {
-      return res.status(400).json({
-        success: false,
-        error: 'delivery_date is required'
-      });
-    }
-
-    if (!address_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'address_id is required'
-      });
-    }
-
-    if (!payment_mode_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'payment_mode_id is required'
-      });
-    }
-
-    if (!cart_validated) {
-      return res.status(400).json({
-        success: false,
-        error: 'Cart must be validated before placing order. Please call validate-cart API first.'
-      });
-    }
-
-    // Get mobile number from JWT token
-    const userMobile = req.user.mobile;
-
-    // Validate and get cart
-    const cart = await Cart.findByMobile(userMobile);
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Cart is empty. Please add items to cart before placing order.'
-      });
-    }
-
-    // Validate delivery slot
-    const deliverySlot = await DeliverySlot.findOne({
-      iddelivery_slot: delivery_slot_id,
-      store_code: store_code.trim(),
-      is_active: 'yes'
+    const savedOrder = await placeOrder({
+      user: req.user,
+      body: req.body,
+      project: req.tenant?.project,
     });
 
-    if (!deliverySlot) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid delivery slot or slot not available for this store'
-      });
-    }
-
-    // Validate payment mode
-    const paymentMode = await PaymentMode.findOne({
-      idpayment_mode: payment_mode_id,
-      is_enabled: 'Yes'
-    });
-
-    if (!paymentMode) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid payment mode or payment mode not available'
-      });
-    }
-
-    // Validate delivery address
-    const deliveryAddress = await AddressBook.findById(address_id);
-    if (!deliveryAddress) {
-      return res.status(400).json({
-        success: false,
-        error: 'Delivery address not found'
-      });
-    }
-
-    // Check if address belongs to user
-    if (deliveryAddress.mobile_number !== userMobile) {
-      return res.status(403).json({
-        success: false,
-        error: 'You can only use your own addresses for delivery'
-      });
-    }
-
-    // Validate delivery date
-    const deliveryDateObj = new Date(delivery_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (deliveryDateObj < today) {
-      return res.status(400).json({
-        success: false,
-        error: 'Delivery date cannot be in the past'
-      });
-    }
-
-    // Generate order number
-    const orderNumber = await Order.generateOrderNumber();
-
-    // --- Process deal items (product deals) ---
-    let orderItems = cart.items.map(item => item.toObject());
-    let dealItemsApplied = [];
-    let dealSavings = 0;
-
-    if (deal_items && Array.isArray(deal_items) && deal_items.length > 0) {
-      const now = new Date();
-      // Calculate subtotal excluding deal item p_codes for eligibility check
-      const dealPCodes = deal_items.map(d => d.p_code);
-      const nonDealSubtotal = orderItems
-        .filter(item => !dealPCodes.includes(item.p_code))
-        .reduce((sum, item) => sum + item.total_price, 0);
-
-      for (const di of deal_items) {
-        const dealOffer = await Offer.findById(di.offer_id);
-        if (!dealOffer || dealOffer.offer_type !== 'product_deal' || !dealOffer.is_active) continue;
-        if (dealOffer.valid_from > now) continue;
-        if (dealOffer.valid_until && dealOffer.valid_until < now) continue;
-        if (nonDealSubtotal < dealOffer.min_cart_value) continue;
-        if (dealOffer.store_codes?.length > 0 && !dealOffer.store_codes.includes(store_code)) continue;
-
-        const dealProduct = (dealOffer.deal_products || []).find(dp => dp.p_code === di.p_code);
-        if (!dealProduct) continue;
-
-        const qty = Math.min(di.quantity || 1, dealProduct.max_quantity);
-
-        // Override item price in order
-        orderItems = orderItems.map(item => {
-          if (item.p_code === di.p_code) {
-            const savings = (item.unit_price - dealProduct.deal_price) * Math.min(item.quantity, qty);
-            dealSavings += savings;
-            return {
-              ...item,
-              unit_price: dealProduct.deal_price,
-              total_price: dealProduct.deal_price * item.quantity
-            };
-          }
-          return item;
-        });
-
-        dealItemsApplied.push({
-          offer_id: dealOffer._id.toString(),
-          offer_title: dealOffer.title,
-          p_code: di.p_code,
-          product_name: dealProduct.product_name,
-          deal_price: dealProduct.deal_price,
-          original_price: dealProduct.original_price,
-          quantity: qty,
-          savings: (dealProduct.original_price - dealProduct.deal_price) * qty
-        });
-      }
-    }
-
-    // Calculate order totals (using adjusted items if deals were applied)
-    const subtotal = orderItems.reduce((sum, item) => sum + item.total_price, 0);
-    const deliveryCharges = Math.max(0, parseFloat(clientDeliveryCharges) || 0);
-    const taxAmount = Math.round(subtotal * 0.18); // 18% GST
-
-    // Calculate cart-level discount from offer
-    let discountAmount = 0;
-    let appliedOffer = null;
-
-    if (offer_id) {
-      const now = new Date();
-      const offer = await Offer.findById(offer_id);
-
-      if (offer && offer.is_active &&
-          (offer.offer_type || 'cart_discount') === 'cart_discount' &&
-          offer.valid_from <= now &&
-          (!offer.valid_until || offer.valid_until >= now) &&
-          subtotal >= offer.min_cart_value &&
-          (!offer.store_codes?.length || offer.store_codes.includes(store_code))) {
-
-        if (offer.discount_type === 'percentage') {
-          discountAmount = Math.round(subtotal * offer.discount_amount / 100);
-          if (offer.max_discount && discountAmount > offer.max_discount) {
-            discountAmount = offer.max_discount;
-          }
-        } else {
-          discountAmount = offer.discount_amount;
-        }
-
-        appliedOffer = {
-          offer_id: offer._id.toString(),
-          title: offer.title,
-          discount_type: offer.discount_type,
-          discount_amount: discountAmount
-        };
-      }
-    }
-
-    const totalAmount = subtotal + deliveryCharges + taxAmount - discountAmount;
-
-    // Determine payment status based on payment method
-    // If payment_details contains razorpay payment info, it's an online paid order
-    // Otherwise it's POD with pending payment
-    const isOnlinePayment = payment_details && (
-      payment_details.razorpay_payment_id ||
-      payment_details.payment_status === 'completed' ||
-      payment_details.method === 'online_payment'
-    );
-
-    const paymentStatus = isOnlinePayment ? 'completed' : 'pending';
-    const transactionId = payment_details?.razorpay_payment_id || payment_details?.transaction_id || '';
-
-    // Create order
-    const order = new Order({
-      order_number: orderNumber,
-      mobile_no: userMobile,
-      customer_info: {
-        name: req.user.name || '',
-        email: req.user.email || ''
-      },
-      store_code: store_code.trim(),
-      project_code: project_code.trim(),
-      order_items: orderItems,
-      delivery_info: {
-        delivery_date: deliveryDateObj,
-        delivery_slot_id: deliverySlot.iddelivery_slot,
-        delivery_slot_from: deliverySlot.delivery_slot_from,
-        delivery_slot_to: deliverySlot.delivery_slot_to,
-        delivery_address: {
-          full_name: deliveryAddress.full_name,
-          mobile_number: deliveryAddress.mobile_number,
-          email_id: deliveryAddress.email_id,
-          line_1: deliveryAddress.delivery_addr_line_1,
-          line_2: deliveryAddress.delivery_addr_line_2,
-          city: deliveryAddress.delivery_addr_city,
-          pincode: deliveryAddress.delivery_addr_pincode,
-          latitude: deliveryAddress.latitude,
-          longitude: deliveryAddress.longitude,
-          area_id: deliveryAddress.area_id
-        }
-      },
-      payment_info: {
-        payment_mode_id: paymentMode.idpayment_mode,
-        payment_mode_name: paymentMode.payment_mode_name,
-        payment_status: paymentStatus,
-        transaction_id: transactionId,
-        payment_details: payment_details || {}
-      },
-      order_summary: {
-        subtotal: subtotal,
-        delivery_charges: deliveryCharges,
-        delivery_distance_km: parseFloat(delivery_distance) || 0,
-        tax_amount: taxAmount,
-        discount_amount: discountAmount,
-        total_amount: totalAmount,
-        total_items: cart.total_items,
-        total_quantity: cart.total_quantity,
-        applied_offer: appliedOffer || undefined,
-        deal_items_applied: dealItemsApplied.length > 0 ? dealItemsApplied : undefined,
-        deal_savings: dealSavings || undefined
-      },
-      order_notes: order_notes || '',
-      estimated_delivery_date: deliveryDateObj
-    });
-
-    // Save order
-    const savedOrder = await order.save();
-
-    // Clear cart after successful order placement
-    await Cart.clearCart(userMobile);
-
-    // Create in-app notification for the user (API-based, no Firebase)
-    if (req.user && req.user._id) {
+    // Notifications are best-effort: a failure here must not fail a placed order.
+    if (req.user?._id) {
       createOrderPlacedNotification(
         req.user._id,
         savedOrder.order_number,
@@ -342,9 +47,7 @@ router.post('/place-order', protect, async (req, res, next) => {
       );
     }
 
-    // Create admin notification for the new order
-    // Create admin notification and push via WebSocket
-    const notifData = {
+    AdminNotification.create({
       title: 'New Order Placed',
       body: `Order #${savedOrder.order_number} — ₹${savedOrder.order_summary.total_amount} by ${req.user?.name || req.user?.mobile || 'Customer'}`,
       type: 'order',
@@ -356,11 +59,8 @@ router.post('/place-order', protect, async (req, res, next) => {
         customer_mobile: req.user?.mobile,
         store_code: savedOrder.store_code
       }
-    };
-
-    AdminNotification.create(notifData)
+    })
       .then((saved) => {
-        // Push real-time notification to all connected admins
         const io = req.app.get('io');
         if (io) {
           io.to('admins').emit('new-admin-notification', {
@@ -392,28 +92,20 @@ router.post('/place-order', protect, async (req, res, next) => {
           pincode: savedOrder.delivery_info.delivery_address.pincode
         },
         payment_mode: savedOrder.payment_info.payment_mode_name,
+        payment_status: savedOrder.payment_info.payment_status,
         order_summary: savedOrder.order_summary,
         items_count: savedOrder.order_summary.total_items
       }
     });
-
   } catch (error) {
-    // Handle duplicate order number (very rare but possible)
-    if (error.code === 11000 && error.keyPattern && error.keyPattern.order_number) {
-      // Retry with a new order number
-      try {
-        const orderNumber = await Order.generateOrderNumber();
-        // Re-run the order creation logic with new order number
-        // For simplicity, we'll just return an error for now
-        return res.status(500).json({
-          success: false,
-          error: 'Order number generation conflict. Please try again.'
-        });
-      } catch (retryError) {
-        return next(retryError);
-      }
+    // Cart/pricing/payment rejections carry their own status and item details.
+    if (error.name === 'OrderError') {
+      return res.status(error.statusCode || 400).json({
+        success: false,
+        error: error.message,
+        ...(error.details && { details: error.details })
+      });
     }
-
     next(error);
   }
 });

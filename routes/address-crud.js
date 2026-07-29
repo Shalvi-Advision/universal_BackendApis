@@ -32,13 +32,6 @@ router.post('/add-address', protect, async (req, res, next) => {
     // Validate required fields
     // store_code is accepted but not required — addresses are per-customer
 
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
     // Get mobile number from JWT token instead of request body
     const userMobile = req.user.mobile;
     
@@ -187,13 +180,6 @@ router.put('/update-address/:id', protect, async (req, res, next) => {
     // Validate required fields
     // store_code is accepted but not required — addresses are per-customer
 
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
     // Get mobile number from JWT token
     const userMobile = req.user.mobile;
     
@@ -319,13 +305,6 @@ router.delete('/delete-address/:id', protect, async (req, res, next) => {
     // Validate required fields
     // store_code is accepted but not required — addresses are per-customer
 
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
     // Get mobile number from JWT token
     const userMobile = req.user.mobile;
     
@@ -375,13 +354,6 @@ router.post('/get-addresses', protect, async (req, res, next) => {
 
     // Validate required fields
     // store_code is accepted but not required — addresses are per-customer
-
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
 
     // Get mobile number from JWT token
     const userMobile = req.user.mobile;

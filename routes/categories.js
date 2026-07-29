@@ -28,12 +28,6 @@ router.post('/get-categories', async (req, res, next) => {
       });
     }
     
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
     
     // Find categories for the specific store_code and dept_id
     const categories = await Category.find({

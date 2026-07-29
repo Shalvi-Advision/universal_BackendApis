@@ -22,13 +22,6 @@ router.post('/add-to-favorites', protect, async (req, res, next) => {
       });
     }
 
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
     if (!p_code || p_code.trim() === '') {
       return res.status(400).json({
         success: false,
@@ -102,13 +95,6 @@ router.delete('/remove-from-favorites', protect, async (req, res, next) => {
       });
     }
 
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
     if (!p_code || p_code.trim() === '') {
       return res.status(400).json({
         success: false,
@@ -162,13 +148,6 @@ router.post('/get-favorites', protect, async (req, res, next) => {
       return res.status(400).json({
         success: false,
         error: 'store_code is required'
-      });
-    }
-
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
       });
     }
 
@@ -233,13 +212,6 @@ router.post('/get-favorites-by-store', protect, async (req, res, next) => {
       });
     }
 
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
     // Get mobile number from JWT token
     const userMobile = req.user.mobile;
 
@@ -298,13 +270,6 @@ router.post('/is-favorited', protect, async (req, res, next) => {
       return res.status(400).json({
         success: false,
         error: 'store_code is required'
-      });
-    }
-
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
       });
     }
 

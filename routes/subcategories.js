@@ -29,12 +29,6 @@ router.post('/get-subcategories', async (req, res, next) => {
       });
     }
     
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
     
     if (!idcategory_master) {
       return res.status(400).json({

@@ -1,43 +1,66 @@
-const errorHandler = (err, req, res, next) => {
-  let error = { ...err };
-  error.message = err.message;
+// Stack traces and raw error messages are opt-in, not environment-inferred.
+// The deployed servers run with NODE_ENV=development, so keying this off the
+// environment name published internal stacks to the public internet.
+const exposeErrorDetail = () => process.env.EXPOSE_ERROR_DETAIL === 'true';
 
-  // Log error
-  console.error('Error:', err);
+const errorHandler = (err, req, res, next) => {
+  let statusCode = err.statusCode || err.status || 500;
+  let message = err.message || 'Server Error';
+  let details;
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
-    const message = 'Resource not found';
-    error = { message, statusCode: 404 };
+    statusCode = 404;
+    message = 'Resource not found';
   }
 
   // Mongoose duplicate key
   if (err.code === 11000) {
-    const message = 'Duplicate field value entered';
-    error = { message, statusCode: 400 };
+    statusCode = 400;
+    message = 'Duplicate field value entered';
   }
 
   // Mongoose validation error
-  if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message).join(', ');
-    error = { message, statusCode: 400 };
+  if (err.name === 'ValidationError' && err.errors) {
+    statusCode = 400;
+    message = Object.values(err.errors).map((val) => val.message).join(', ');
+  }
+
+  // express-validator failures forwarded via next()
+  if (err.name === 'RequestValidationError' && Array.isArray(err.details)) {
+    statusCode = 400;
+    details = err.details;
   }
 
   // JWT errors
   if (err.name === 'JsonWebTokenError') {
-    const message = 'Invalid token';
-    error = { message, statusCode: 401 };
+    statusCode = 401;
+    message = 'Invalid token';
   }
 
   if (err.name === 'TokenExpiredError') {
-    const message = 'Token expired';
-    error = { message, statusCode: 401 };
+    statusCode = 401;
+    message = 'Token expired';
   }
 
-  res.status(error.statusCode || 500).json({
+  // Always log the full error server-side, with enough context to find it.
+  const logLine = `${req.method} ${req.originalUrl} -> ${statusCode}`;
+  if (statusCode >= 500) {
+    console.error(`Error: ${logLine}`, err);
+  } else {
+    console.warn(`Warn: ${logLine} — ${message}`);
+  }
+
+  // A 5xx message is an internal detail (driver errors, stack frames, connection
+  // strings). Client-caused 4xx messages are intentional and safe to return.
+  const clientMessage =
+    statusCode >= 500 && !exposeErrorDetail() ? 'Server Error' : message;
+
+  res.status(statusCode).json({
     success: false,
-    error: error.message || 'Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    error: clientMessage,
+    ...(details && { details }),
+    ...(exposeErrorDetail() && { stack: err.stack })
   });
 };
 

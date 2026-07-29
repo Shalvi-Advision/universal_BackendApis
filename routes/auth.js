@@ -2,6 +2,7 @@ const express = require('express');
 const { body } = require('express-validator');
 const { sendOtp, verifyOtp, adminLogin, getProfile, updateProfile, logout, isActive, saveFcmToken } = require('../controllers/auth');
 const { protect } = require('../middleware/auth');
+const validate = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -56,17 +57,17 @@ const updateProfileValidation = [
 // @route   POST /api/auth/send-otp
 // @desc    Send OTP to mobile number
 // @access  Public
-router.post('/send-otp', sendOtpValidation, sendOtp);
+router.post('/send-otp', sendOtpValidation, validate, sendOtp);
 
 // @route   POST /api/auth/verify-otp
 // @desc    Verify OTP and get authentication token
 // @access  Public
-router.post('/verify-otp', verifyOtpValidation, verifyOtp);
+router.post('/verify-otp', verifyOtpValidation, validate, verifyOtp);
 
 // @route   POST /api/auth/admin-login
 // @desc    Admin panel login with mobile + password (no OTP, no SMS spend)
 // @access  Public
-router.post('/admin-login', adminLoginValidation, adminLogin);
+router.post('/admin-login', adminLoginValidation, validate, adminLogin);
 
 // @route   GET /api/auth/profile
 // @desc    Get current user profile
@@ -76,7 +77,7 @@ router.get('/profile', protect, getProfile);
 // @route   PUT /api/auth/profile
 // @desc    Update user profile
 // @access  Private
-router.put('/profile', protect, updateProfileValidation, updateProfile);
+router.put('/profile', protect, updateProfileValidation, validate, updateProfile);
 
 // @route   POST /api/auth/logout
 // @desc    Logout user

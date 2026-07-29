@@ -138,12 +138,6 @@ router.post('/get-departments', async (req, res, next) => {
       });
     }
     
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
     
     // Handle store_code normalization (null, empty string, or actual store code)
     const queryStoreCode = !store_code || store_code.trim() === '' || store_code === 'null' 

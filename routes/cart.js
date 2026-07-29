@@ -39,13 +39,6 @@ router.post('/save-cart', protect, async (req, res, next) => {
       });
     }
 
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
@@ -148,13 +141,6 @@ router.post('/validate-cart', protect, async (req, res, next) => {
       return res.status(400).json({
         success: false,
         error: 'store_code is required'
-      });
-    }
-
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
       });
     }
 
@@ -348,13 +334,6 @@ router.post('/get-cart', protect, async (req, res, next) => {
       });
     }
 
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
-
     // Get mobile number from JWT token
     const userMobile = req.user.mobile;
 
@@ -413,13 +392,6 @@ router.post('/clear-cart', protect, async (req, res, next) => {
       return res.status(400).json({
         success: false,
         error: 'store_code is required'
-      });
-    }
-
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
       });
     }
 

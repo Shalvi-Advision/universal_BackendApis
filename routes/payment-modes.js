@@ -21,12 +21,6 @@ router.post('/get-payment-modes', async (req, res, next) => {
       });
     }
     
-    if (!project_code || project_code.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'project_code is required'
-      });
-    }
     
     // Find all payment modes (since payment modes are typically global, not store-specific)
     const paymentModes = await PaymentMode.findAllSorted();

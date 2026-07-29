@@ -56,6 +56,15 @@ const tenantResolver = async (req, res, next) => {
     const connection = getTenantDb(project.db_name);
     req.tenant = { projectCode, project, db: connection };
 
+    // Backfill the legacy body field. Tenancy is resolved from the header now,
+    // but many handlers still read req.body.project_code — to echo it back, and
+    // some to validate it. Injecting the resolved code here means a client that
+    // sends only the header is never rejected for "project_code is required",
+    // and the two can no longer disagree.
+    if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+      req.body.project_code = projectCode;
+    }
+
     // Everything downstream of this call (all route handlers and their async
     // work) sees this tenant's connection via the model proxies.
     als.run({ connection, project }, () => next());

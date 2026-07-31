@@ -161,7 +161,7 @@ router.post('/validate-cart', protect, async (req, res, next) => {
           valid: true,
           totalItems: 0,
           validItems: 0,
-          invalidItems: 0,
+          invalidItemCount: 0,
           updatedItems: [],
           invalidItems: []
         }
@@ -298,7 +298,10 @@ router.post('/validate-cart', protect, async (req, res, next) => {
         valid: validationResults.valid,
         totalItems: cart.items.length,
         validItems: validationResults.totalValidItems,
-        invalidItems: validationResults.totalInvalidItems,
+        // `invalidItems` was declared twice in this literal — first as this
+        // count, then as the array below. The later key won, so the count was
+        // silently dropped; it is named distinctly now so both survive.
+        invalidItemCount: validationResults.totalInvalidItems,
         updatedItems: validationResults.updatedItems,
         invalidItems: validationResults.invalidItems,
         // Summary for quick frontend checks

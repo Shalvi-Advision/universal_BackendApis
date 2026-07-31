@@ -49,30 +49,61 @@ router.post('/save-cart', protect, async (req, res, next) => {
     // Get mobile number from JWT token
     const userMobile = req.user.mobile;
 
-    // Validate each cart item
+    // Validate each cart item.
+    //
+    // The checks below are deliberately per-field and truthiness-free. The
+    // previous guard was a single `!item.p_code || !item.product_name ||
+    // !item.quantity || !item.unit_price`, which rejected a unit_price of 0 —
+    // a free item, or a price the client failed to parse — as "required", and
+    // named all four fields whichever one was actually at fault. The client
+    // shows this string to the shopper, so it has to identify the real problem.
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (!item.p_code || !item.product_name || !item.quantity || !item.unit_price) {
-        return res.status(400).json({
-          success: false,
-          error: `Item ${i + 1}: p_code, product_name, quantity, and unit_price are required`
-        });
+      const label = `Item ${i + 1}${item.product_name ? ` (${item.product_name})` : ''}`;
+
+      if (!item.p_code || String(item.p_code).trim() === '') {
+        return res.status(400).json({ success: false, error: `${label}: p_code is required` });
       }
-      if (item.quantity < 1) {
-        return res.status(400).json({
-          success: false,
-          error: `Item ${i + 1}: quantity must be at least 1`
-        });
+      if (!item.product_name || String(item.product_name).trim() === '') {
+        return res.status(400).json({ success: false, error: `${label}: product_name is required` });
       }
-      if (item.unit_price < 0) {
-        return res.status(400).json({
-          success: false,
-          error: `Item ${i + 1}: unit_price cannot be negative`
-        });
+
+      const quantity = Number(item.quantity);
+      if (!Number.isFinite(quantity)) {
+        return res.status(400).json({ success: false, error: `${label}: quantity must be a number` });
       }
+      if (quantity < 1) {
+        return res.status(400).json({ success: false, error: `${label}: quantity must be at least 1` });
+      }
+
+      const unitPrice = Number(item.unit_price);
+      if (!Number.isFinite(unitPrice)) {
+        return res.status(400).json({ success: false, error: `${label}: unit_price must be a number` });
+      }
+      if (unitPrice < 0) {
+        return res.status(400).json({ success: false, error: `${label}: unit_price cannot be negative` });
+      }
+
+      item.quantity = quantity;
+      item.unit_price = unitPrice;
       // Recalculate total_price to ensure consistency
-      item.total_price = item.quantity * item.unit_price;
+      item.total_price = quantity * unitPrice;
       item.store_code = store_code.trim();
+
+      // package_size is a Number in the schema but arrives as a string from
+      // most of the catalogue (2267 of 2268 ProductMaster rows store it as
+      // one). A non-numeric value would reach Mongoose as a CastError, which
+      // the error handler maps to a 404 "Resource not found" — an unreadable
+      // answer to "why can't I save my cart". It is cosmetic data, so coerce
+      // what parses and drop what doesn't.
+      if (item.package_size !== undefined && item.package_size !== null) {
+        const packageSize = Number(item.package_size);
+        if (Number.isFinite(packageSize)) {
+          item.package_size = packageSize;
+        } else {
+          delete item.package_size;
+        }
+      }
     }
 
     // Calculate totals

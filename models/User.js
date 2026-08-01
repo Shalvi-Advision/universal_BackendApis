@@ -146,6 +146,22 @@ const userSchema = new mongoose.Schema({
   fcmToken: {
     type: String,
     default: null
+  },
+  // Live refresh tokens for this account, one per signed-in device.
+  //
+  // Only the SHA-256 hash is stored: a leaked database dump then yields no
+  // usable session, exactly as with the password hash. `select: false` keeps
+  // the array out of every ordinary query — `protect` loads the user on every
+  // authenticated request and has no business carrying session material.
+  refreshTokens: {
+    type: [{
+      tokenHash: { type: String, required: true },
+      expiresAt: { type: Date, required: true },
+      createdAt: { type: Date, default: Date.now },
+      device: { type: String, default: '' }
+    }],
+    default: [],
+    select: false
   }
 }, {
   timestamps: true,

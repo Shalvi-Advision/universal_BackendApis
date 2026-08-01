@@ -1,6 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { sendOtp, verifyOtp, adminLogin, getProfile, updateProfile, logout, isActive, saveFcmToken } = require('../controllers/auth');
+const { sendOtp, verifyOtp, adminLogin, refreshToken, getProfile, updateProfile, logout, isActive, saveFcmToken } = require('../controllers/auth');
 const { protect } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 
@@ -68,6 +68,13 @@ router.post('/verify-otp', verifyOtpValidation, validate, verifyOtp);
 // @desc    Admin panel login with mobile + password (no OTP, no SMS spend)
 // @access  Public
 router.post('/admin-login', adminLoginValidation, validate, adminLogin);
+
+// @route   POST /api/auth/refresh-token
+// @desc    Exchange a refresh token for a fresh access/refresh pair
+// @access  Public — deliberately not `protect`ed, since the whole point is to
+//          be callable once the access token has expired. The refresh token in
+//          the body is the credential.
+router.post('/refresh-token', refreshToken);
 
 // @route   GET /api/auth/profile
 // @desc    Get current user profile

@@ -1,4 +1,5 @@
 const razorpayService = require('../utils/razorpayService');
+const { getRazorpayCredentials } = require('../utils/tenantIntegrations');
 
 /**
  * @desc    Create Razorpay order
@@ -27,15 +28,42 @@ const createOrder = async (req, res, next) => {
     // Built from the tenant's own key pair, not a shared module-level client.
     const order = await razorpayService.createOrder(options, req.tenant?.project);
 
+    // The key id the order was actually created under.
+    //
+    // The app used to read its checkout key from GET /api/project-config while
+    // the order was created here, so the two could disagree — a tenant with a
+    // configured key_id but no key_secret falls back to the platform env pair,
+    // and Razorpay then rejects the order at checkout because it belongs to a
+    // different account. Returning it removes the chance of disagreement.
+    const { keyId } = await getRazorpayCredentials(req.tenant?.project);
+
     res.status(200).json({
       success: true,
       id: order.id,
       amount: order.amount,
       currency: order.currency,
       receipt: order.receipt,
+      key_id: keyId,
     });
   } catch (error) {
     console.error('Razorpay order creation error:', error);
+
+    // Razorpay reports rejections as { statusCode, error: { description } },
+    // with no `message` of its own. The generic handler therefore fell back to
+    // "Server Error", so a caller-fixable problem — a receipt over 40 chars,
+    // an unsupported currency, a disabled account — reached the app as an
+    // opaque string and told the shopper only to try again.
+    const description =
+      error?.error?.description || error?.description || error?.message;
+    const status = Number(error?.statusCode) || Number(error?.status);
+
+    if (description && status >= 400 && status < 500) {
+      return res.status(status).json({
+        success: false,
+        message: `Payment gateway rejected the order: ${description}`,
+      });
+    }
+
     next(error);
   }
 };

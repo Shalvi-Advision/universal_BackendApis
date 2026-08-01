@@ -1,17 +1,69 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const sms = require('../utils/sms');
 const { getTenantDb, DEFAULT_DB_NAME } = require('../config/database');
 
-// Generate JWT token
+const JWT_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
+
+// Access tokens are short-lived and refresh tokens carry the session.
+//
+// The access token used to last 30 days on its own, with nothing to revoke it:
+// one intercepted token was a month of authenticated access, and signing out
+// on a lost phone did nothing because /logout was a no-op that only returned
+// 200. A stolen access token is now worth at most ACCESS_TOKEN_TTL, and the
+// refresh token behind it is revocable per device.
+const ACCESS_TOKEN_TTL = process.env.JWT_EXPIRE || '7d';
+const REFRESH_TOKEN_TTL_DAYS = Number(process.env.JWT_REFRESH_EXPIRE_DAYS || 90);
+
+// `type` separates the two. Without it a refresh token — which lives far longer
+// — would sail through `protect` as an access token, and the short access TTL
+// would buy nothing.
 const generateToken = (userId) => {
+  return jwt.sign({ id: userId, type: 'access' }, JWT_SECRET(), {
+    expiresIn: ACCESS_TOKEN_TTL
+  });
+};
+
+// `jti` is what makes rotation real. JWT `iat` has one-second resolution, so a
+// refresh issued in the same second as the one it replaces produced a
+// byte-identical token: the rotation pulled a hash and then pushed the very
+// same hash back, and replaying the "spent" token still worked.
+const generateRefreshToken = (userId) => {
   return jwt.sign(
-    { id: userId },
-    process.env.JWT_SECRET || 'your-secret-key',
-    {
-      expiresIn: process.env.JWT_EXPIRE || '30d'
-    }
+    { id: userId, type: 'refresh', jti: crypto.randomUUID() },
+    JWT_SECRET(),
+    { expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d` }
   );
+};
+
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+
+/// Issues an access/refresh pair and records the refresh hash against the user.
+///
+/// Also drops that user's expired hashes, so the array tracks live devices
+/// instead of growing forever.
+const issueTokens = async (user, device = '') => {
+  const accessToken = generateToken(user._id);
+  const refreshToken = generateRefreshToken(user._id);
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+  const now = new Date();
+  await User.updateOne(
+    { _id: user._id },
+    { $pull: { refreshTokens: { expiresAt: { $lte: now } } } }
+  );
+  await User.updateOne(
+    { _id: user._id },
+    { $push: { refreshTokens: { tokenHash: hashToken(refreshToken), expiresAt, device } } }
+  );
+
+  return {
+    token: accessToken,
+    refreshToken,
+    expiresIn: ACCESS_TOKEN_TTL,
+    refreshExpiresAt: expiresAt.toISOString()
+  };
 };
 
 // Locate an admin by mobile, with the password hash selected.
@@ -111,13 +163,24 @@ const adminLogin = async (req, res) => {
     user.lastLoginAt = new Date();
     await user.save();
 
-    const token = generateToken(user._id);
+    // The admin panel has no refresh handling yet, so its access token keeps
+    // the long TTL it has always had rather than silently dropping to the new
+    // 7-day one and signing admins out every week. A refresh token is issued
+    // alongside it so the panel can adopt the same flow without an API change;
+    // shorten ADMIN_ACCESS_TOKEN_TTL once it does.
+    const adminToken = jwt.sign({ id: user._id, type: 'access' }, JWT_SECRET(), {
+      expiresIn: process.env.ADMIN_ACCESS_TOKEN_TTL || '30d'
+    });
+    const { refreshToken: adminRefreshToken, refreshExpiresAt } =
+      await issueTokens(user, 'admin-panel');
 
     res.status(200).json({
       success: true,
       message: 'Login successful',
       data: {
-        token,
+        token: adminToken,
+        refreshToken: adminRefreshToken,
+        refreshExpiresAt,
         user: {
           id: user._id,
           mobile: user.mobile,
@@ -248,15 +311,15 @@ const verifyOtp = async (req, res) => {
     }
     await user.save();
 
-    // Generate JWT token
-    const token = generateToken(user._id);
+    // Generate the access/refresh pair
+    const tokens = await issueTokens(user, (req.body && req.body.device) || '');
 
     // Send success response
     res.status(200).json({
       success: true,
       message: 'Login successful',
       data: {
-        token,
+        ...tokens,
         user: {
           id: user._id,
           mobile: user.mobile,
@@ -351,8 +414,20 @@ const updateProfile = async (req, res) => {
 // @access  Private
 const logout = async (req, res) => {
   try {
-    // For stateless JWT, logout is handled client-side by removing token
-    // But we can log the logout event here
+    // Actually end the session. This used to just return 200 without touching
+    // any state, so "log out" on a lost or shared device revoked nothing — the
+    // token kept working until it expired on its own.
+    const { refreshToken, allDevices } = req.body || {};
+
+    if (allDevices) {
+      await User.updateOne({ _id: req.user.id }, { $set: { refreshTokens: [] } });
+    } else if (refreshToken) {
+      await User.updateOne(
+        { _id: req.user.id },
+        { $pull: { refreshTokens: { tokenHash: hashToken(refreshToken) } } }
+      );
+    }
+
     res.status(200).json({
       success: true,
       message: 'Logged out successfully'
@@ -363,6 +438,89 @@ const logout = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Logout failed',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Exchange a refresh token for a fresh access/refresh pair
+// @route   POST /api/auth/refresh-token
+// @access  Public — the refresh token itself is the credential
+const refreshToken = async (req, res) => {
+  try {
+    const supplied = (req.body && req.body.refreshToken) || '';
+    if (!supplied) {
+      return res.status(400).json({
+        success: false,
+        message: 'refreshToken is required'
+      });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(supplied, JWT_SECRET());
+    } catch (e) {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is invalid or expired'
+      });
+    }
+
+    // An access token must not be spendable as a refresh token.
+    if (decoded.type !== 'refresh') {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is invalid or expired'
+      });
+    }
+
+    const user = await User.findById(decoded.id).select('+refreshTokens');
+    if (!user || !user.isVerified) {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is invalid or expired'
+      });
+    }
+
+    // A signature alone is not enough: the hash must still be on the account,
+    // which is what makes logout and revocation mean anything.
+    const suppliedHash = hashToken(supplied);
+    const stored = (user.refreshTokens || []).find((t) => t.tokenHash === suppliedHash);
+    if (!stored || stored.expiresAt <= new Date()) {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is invalid or expired'
+      });
+    }
+
+    // Rotate: this token is spent. A replay of it now finds nothing stored and
+    // is rejected, which is what limits the damage if one is ever captured.
+    await User.updateOne(
+      { _id: user._id },
+      { $pull: { refreshTokens: { tokenHash: suppliedHash } } }
+    );
+    const tokens = await issueTokens(user, stored.device || '');
+
+    res.status(200).json({
+      success: true,
+      message: 'Token refreshed',
+      data: {
+        ...tokens,
+        user: {
+          id: user._id,
+          mobile: user.mobile,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isVerified: user.isVerified
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Refresh Token Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to refresh token',
       error: error.message
     });
   }
@@ -478,6 +636,7 @@ module.exports = {
   sendOtp,
   verifyOtp,
   adminLogin,
+  refreshToken,
   getProfile,
   updateProfile,
   logout,

@@ -8,6 +8,10 @@ const { getProjectModel } = require('../models/Project');
 // or inserting directly via the admin panel later.
 const PROJECTS = [
   {
+    // Config mirrors what the dev API serves from GET /api/project-config on
+    // 2026-08-01. It had drifted — the colours here were #E53935/#FDD835, so
+    // seeding a control DB branded the app in a palette no environment used,
+    // and left razorpay_key_id empty, which silently disables checkout.
     project_code: 'RET5677',
     client_name: 'Pagariya Mart',
     db_name: 'Pagariya_DB',
@@ -15,13 +19,24 @@ const PROJECTS = [
     config: {
       app_name: 'Pagariya Mart',
       currency: 'INR',
-      primary_color: '#E53935',
-      secondary_color: '#FDD835',
+      primary_color: '#863283',
+      secondary_color: '#24c278',
+      accent_color: '#9d41c8',
+      font_family: 'Poppins',
       min_app_version: '4.0.0',
       latest_app_version: '4.0.13',
       android_store_url: '',
       ios_store_url: '',
       force_update_message: 'A new version of the app is available. Please update to continue.',
+      splash_logo_url: 'https://pagariyamart.com/media/branding/095df452-192a-41f3-a618-052783ddff4e.jpg',
+      splash_background_image_url: 'https://pagariyamart.com/media/branding/67b42371-a90f-4302-aea8-de68a61ac9f7.jpg',
+      splash_tagline: 'Tagline Test',
+      splash_tagline_color: '#ffffff',
+      splash_animation: 'none',
+      splash_show_loader: 'false',
+      home_feed_enabled: 'true',
+      // Razorpay TEST key — the same one dev serves. Never seed a live key here.
+      razorpay_key_id: 'rzp_test_5yy0US6kMQYbpU',
     },
   },
   {

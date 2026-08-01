@@ -45,6 +45,18 @@ const protect = async (req, res, next) => {
         process.env.JWT_SECRET || 'your-secret-key'
       );
 
+      // Refresh tokens are signed with the same secret but live far longer, so
+      // one presented here would otherwise authenticate ordinary requests for
+      // its whole 90 days and make the short access TTL pointless. Tokens
+      // issued before `type` existed carry no claim and are still accepted, so
+      // upgrading the server does not sign everyone out.
+      if (decoded.type && decoded.type !== 'access') {
+        return res.status(401).json({
+          success: false,
+          message: 'Token is not valid.'
+        });
+      }
+
       // Get user from token
       const user = await findUserById(decoded.id);
 

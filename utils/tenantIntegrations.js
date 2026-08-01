@@ -53,6 +53,19 @@ const getRazorpayCredentials = async (project) => {
     if (keyId && keySecret) {
       return { keyId, keySecret, source: 'tenant', projectCode: tenant.project_code };
     }
+
+    // Half-configured is the dangerous state, and it used to be silent: the
+    // tenant advertises a key_id through /api/project-config, but with no
+    // secret here the order is created under the platform's env pair instead.
+    // Clients that took their checkout key from project-config then opened a
+    // payment against an order belonging to another Razorpay account.
+    if (keyId && !keySecret) {
+      console.warn(
+        `⚠️  Tenant ${tenant.project_code} has razorpay_key_id configured but no ` +
+        'razorpay_key_secret — falling back to the platform key pair. Set the ' +
+        'secret, or clear the key id, so both halves come from one account.'
+      );
+    }
   }
 
   return {

@@ -27,7 +27,21 @@ const {
 // from the database on the server. The request body only selects *which*
 // address / slot / payment mode / offer to use — never an amount.
 
-const TAX_RATE = 0.18; // 18% GST
+// GST is INCLUDED in our_price, as it is on the shelf price it comes from.
+//
+// The total used to be `subtotal + delivery + subtotal * 0.18`, adding the tax
+// a second time on top of a price that already carried it. That made every
+// online payment impossible to complete: the app charges the cart total the
+// shopper was shown, resolvePaymentStatus then compares the captured amount to
+// this inflated figure and refuses the order — money taken, no order. On a
+// ₹339 basket the two differed by ₹61.
+//
+// Tax is still recorded, but as the portion of the inclusive price that IS
+// tax (`amount × rate / (1 + rate)`), which is what an invoice needs.
+const TAX_RATE = 0.18; // 18% GST, included in the price
+
+/// The GST already contained in a tax-inclusive [amount].
+const includedTax = (amount) => round2((amount * TAX_RATE) / (1 + TAX_RATE));
 const ORDER_NUMBER_RETRIES = 5;
 
 // Payment modes whose name implies the money is collected up front. There is no
@@ -516,8 +530,11 @@ const placeOrder = async ({ user, body, project }) => {
     subtotal
   );
 
-  const taxAmount = Math.round(subtotal * TAX_RATE);
-  const totalAmount = round2(subtotal + deliveryCharges + taxAmount - discountAmount);
+  // Tax is inside `subtotal`, so it is reported, not added. Adding it here is
+  // what made the payable total disagree with the amount the shopper was shown
+  // and actually paid — see the note on TAX_RATE.
+  const totalAmount = round2(subtotal + deliveryCharges - discountAmount);
+  const taxAmount = includedTax(subtotal - discountAmount);
 
   // --- Payment, verified against the gateway ---
   const { paymentStatus, transactionId, verifiedPayment } = await resolvePaymentStatus({

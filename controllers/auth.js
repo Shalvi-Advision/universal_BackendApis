@@ -3,6 +3,10 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const sms = require('../utils/sms');
 const { getTenantDb, DEFAULT_DB_NAME } = require('../config/database');
+const {
+  classifyRefreshToken,
+  REFRESH_VERDICT
+} = require('../utils/refreshTokenPolicy');
 
 const JWT_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
 
@@ -39,6 +43,20 @@ const generateRefreshToken = (userId) => {
 
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
+// How long a just-rotated refresh token keeps working.
+//
+// Covers the gap between this server committing a rotation and the client
+// persisting the pair it was sent. Long enough to survive a dropped response or
+// an app suspended mid-request; short enough that a captured token is not
+// meaningfully more useful for having been spent.
+const REFRESH_GRACE_MS = Number(process.env.JWT_REFRESH_GRACE_MS || 60_000);
+
+// How long spent entries are kept before pruning, so reuse stays detectable
+// well past the grace window rather than looking like an unknown token.
+const SUPERSEDED_RETENTION_MS = Number(
+  process.env.JWT_REFRESH_SUPERSEDED_RETENTION_MS || 24 * 60 * 60 * 1000
+);
+
 /// Issues an access/refresh pair and records the refresh hash against the user.
 ///
 /// Also drops that user's expired hashes, so the array tracks live devices
@@ -49,13 +67,38 @@ const issueTokens = async (user, device = '') => {
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
 
   const now = new Date();
+  // Drop entries that are expired, and spent ones we have kept long enough to
+  // have served their purpose as reuse evidence.
   await User.updateOne(
     { _id: user._id },
-    { $pull: { refreshTokens: { expiresAt: { $lte: now } } } }
+    {
+      $pull: {
+        refreshTokens: {
+          $or: [
+            { expiresAt: { $lte: now } },
+            {
+              supersededAt: {
+                $ne: null,
+                $lte: new Date(now.getTime() - SUPERSEDED_RETENTION_MS)
+              }
+            }
+          ]
+        }
+      }
+    }
   );
   await User.updateOne(
     { _id: user._id },
-    { $push: { refreshTokens: { tokenHash: hashToken(refreshToken), expiresAt, device } } }
+    {
+      $push: {
+        refreshTokens: {
+          tokenHash: hashToken(refreshToken),
+          expiresAt,
+          device,
+          supersededAt: null
+        }
+      }
+    }
   );
 
   return {
@@ -486,18 +529,65 @@ const refreshToken = async (req, res) => {
     // which is what makes logout and revocation mean anything.
     const suppliedHash = hashToken(supplied);
     const stored = (user.refreshTokens || []).find((t) => t.tokenHash === suppliedHash);
-    if (!stored || stored.expiresAt <= new Date()) {
+    const now = new Date();
+
+    if (!stored || stored.expiresAt <= now) {
       return res.status(401).json({
         success: false,
         message: 'Refresh token is invalid or expired'
       });
     }
 
-    // Rotate: this token is spent. A replay of it now finds nothing stored and
-    // is rejected, which is what limits the damage if one is ever captured.
+
+    const verdict = classifyRefreshToken(stored, now, REFRESH_GRACE_MS);
+
+    if (verdict === REFRESH_VERDICT.REUSE) {
+      // Reuse of a token rotated away long enough ago that a well-behaved
+      // client cannot still be holding it — it has had the replacement since.
+      // Treat it as captured and end every session on the account. The
+      // legitimate owner signs in again; whoever replayed it gets nothing.
+      console.warn(
+        `Refresh token reuse detected for user ${user._id} — revoking all sessions`
+      );
+      await User.updateOne({ _id: user._id }, { $set: { refreshTokens: [] } });
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is invalid or expired'
+      });
+    }
+
+    if (verdict === REFRESH_VERDICT.RETRY) {
+      // Inside the grace window: the client is retrying because it never
+      // received — or never managed to store — the pair already issued. Hand it
+      // a fresh one rather than ending a session that is plainly alive.
+      console.warn(`Refresh retry within grace window for user ${user._id} — reissuing`);
+      const retryTokens = await issueTokens(user, stored.device || '');
+
+      return res.status(200).json({
+        success: true,
+        message: 'Token refreshed',
+        data: {
+          ...retryTokens,
+          user: {
+            id: user._id,
+            mobile: user.mobile,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            isVerified: user.isVerified
+          }
+        }
+      });
+    }
+
+    // Rotate: this token is spent. It is marked rather than deleted so a client
+    // that loses the reply can retry inside REFRESH_GRACE_MS, and a replay
+    // after that is recognisable as reuse instead of looking like an unknown
+    // token. Deleting it outright is what turned a dropped response into a
+    // silent sign-out.
     await User.updateOne(
-      { _id: user._id },
-      { $pull: { refreshTokens: { tokenHash: suppliedHash } } }
+      { _id: user._id, 'refreshTokens.tokenHash': suppliedHash },
+      { $set: { 'refreshTokens.$.supersededAt': now } }
     );
     const tokens = await issueTokens(user, stored.device || '');
 

@@ -158,7 +158,26 @@ const userSchema = new mongoose.Schema({
       tokenHash: { type: String, required: true },
       expiresAt: { type: Date, required: true },
       createdAt: { type: Date, default: Date.now },
-      device: { type: String, default: '' }
+      device: { type: String, default: '' },
+
+      // When this token was rotated away, rather than deleting it outright.
+      //
+      // Rotation used to $pull the spent hash in the same breath as issuing its
+      // replacement, so the old token died the instant the server answered —
+      // before the client could possibly have stored the new one. A client that
+      // lost that response (backgrounded mid-request, killed by the OS, write
+      // failed) was left holding a token the server had already destroyed, and
+      // its next refresh was rejected as a dead session. The app treats a
+      // rejected refresh as a sign-out, so the shopper was silently logged out.
+      //
+      // The Razorpay checkout is where this bites: it backgrounds the app for
+      // as long as a bank OTP takes, which is precisely the window in which a
+      // response goes missing.
+      //
+      // Keeping the entry with a timestamp lets a genuine retry inside
+      // REFRESH_GRACE_MS succeed, and turns a reuse *after* that window into
+      // something detectable rather than indistinguishable from a lost reply.
+      supersededAt: { type: Date, default: null }
     }],
     default: [],
     select: false

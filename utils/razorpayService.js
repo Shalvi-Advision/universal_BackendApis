@@ -10,7 +10,21 @@ const { getRazorpayCredentials } = require('./tenantIntegrations');
 // signatures were always checked against one secret. Clients are now built per
 // request from the tenant's own key pair and cached by key id.
 
+// Cached by key id AND a digest of the secret.
+//
+// Keying on the id alone meant a client built once was reused for the life of
+// the process, so rotating a tenant's key_secret — in the admin panel, or by
+// correcting a bad one — had no effect until someone restarted the API. Every
+// order kept being signed with the superseded secret and Razorpay answered
+// "Authentication failed", while the stored credentials looked perfectly
+// correct to anyone who went and read them.
+//
+// The digest, not the secret, is the cache key: this map is process-global and
+// long-lived, and there is no reason for it to hold plaintext credentials.
 const clientCache = new Map();
+
+const cacheKey = (keyId, keySecret) =>
+  `${keyId}:${crypto.createHash('sha256').update(keySecret).digest('hex').slice(0, 16)}`;
 
 const getClient = async (project) => {
   const { keyId, keySecret, source, projectCode } = await getRazorpayCredentials(project);
@@ -23,11 +37,12 @@ const getClient = async (project) => {
     throw error;
   }
 
-  if (!clientCache.has(keyId)) {
-    clientCache.set(keyId, new Razorpay({ key_id: keyId, key_secret: keySecret }));
+  const key = cacheKey(keyId, keySecret);
+  if (!clientCache.has(key)) {
+    clientCache.set(key, new Razorpay({ key_id: keyId, key_secret: keySecret }));
   }
 
-  return { client: clientCache.get(keyId), keyId, keySecret, source };
+  return { client: clientCache.get(key), keyId, keySecret, source };
 };
 
 /**

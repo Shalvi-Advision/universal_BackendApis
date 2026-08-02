@@ -3,6 +3,8 @@ const router = express.Router();
 const { getProjectModel } = require('../../models/Project');
 const { checkPermission, requireSuperAdmin } = require('../../middleware/checkPermission');
 const { clearTenantCache } = require('../../middleware/tenant');
+const { clearSecretsCache } = require('../../utils/tenantIntegrations');
+const { clearClientCache } = require('../../utils/razorpayService');
 
 // Branding/app settings ride on the dynamicSection permission group like
 // other merchandised content. requireProjectAccess (mounted on /api/admin)
@@ -316,7 +318,22 @@ router.put('/secrets', requireSuperAdmin, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
+    // All three caches, not just the registry.
+    //
+    // Only clearTenantCache() was called here, and it clears the project_code
+    // -> document map. The credential caches were left holding the superseded
+    // values: `secretsCache` for its 60s TTL, and — the one that mattered —
+    // razorpayService's client cache forever, since it had no TTL and nothing
+    // ever called clearClientCache().
+    //
+    // The effect was that saving a corrected Razorpay secret appeared to work,
+    // the panel reported the secret as set, the database held the right value,
+    // and every order kept being signed with the old one. Razorpay answered
+    // "Authentication failed" against credentials that were, by inspection,
+    // entirely correct — and only a restart of the API fixed it.
     clearTenantCache();
+    clearSecretsCache();
+    clearClientCache();
 
     res.status(200).json({
       success: true,

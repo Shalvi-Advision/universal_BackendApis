@@ -35,18 +35,7 @@ const loadSecrets = async (projectCode) => {
 
 const clearSecretsCache = () => secretsCache.clear();
 
-// Whether a tenant with no Razorpay pair of its own may fall back to the
-// platform's env credentials.
-//
-// This is money routing, not configuration convenience: under the fallback,
-// a client's customers pay into the PLATFORM's merchant account. Nothing in
-// the payment flow can detect that afterwards — the signature verifies, the
-// amount matches, the order is placed — and the money simply settles to the
-// wrong company, leaving a reconciliation problem nobody notices until payout.
-//
-// Off means such a tenant gets a clear 503 at checkout instead. Keep it off in
-// any deployment serving more than one client. It exists at all because
-// single-tenant installs and local dev legitimately run on env credentials.
+
 const allowPlatformFallback = () =>
   process.env.ALLOW_PLATFORM_RAZORPAY_FALLBACK === 'true';
 

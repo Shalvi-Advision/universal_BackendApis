@@ -1,0 +1,32 @@
+[
+  {
+    "_id": "6836ca9e8244234560275640",
+    "idpayment_status": 1,
+    "payment_status_name": "Pending"
+  },
+  {
+    "_id": "6836ca9e8244234560275641",
+    "idpayment_status": 2,
+    "payment_status_name": "Completed"
+  },
+  {
+    "_id": "6836ca9e8244234560275645",
+    "idpayment_status": 6,
+    "payment_status_name": "POD Pending"
+  },
+  {
+    "_id": "6836ca9e8244234560275642",
+    "idpayment_status": 3,
+    "payment_status_name": "Refund"
+  },
+  {
+    "_id": "6836ca9e8244234560275643",
+    "idpayment_status": 4,
+    "payment_status_name": "Failed"
+  },
+  {
+    "_id": "6836ca9e8244234560275644",
+    "idpayment_status": 5,
+    "payment_status_name": "In Settlement"
+  }
+]

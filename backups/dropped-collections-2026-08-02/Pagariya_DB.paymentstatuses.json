@@ -1,0 +1,44 @@
+[
+  {
+    "_id": "6a3ba28b2c9b0506f3900c0f",
+    "idpayment_status": 4,
+    "payment_status_name": "Failed",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900c0d",
+    "idpayment_status": 2,
+    "payment_status_name": "Completed",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900c11",
+    "idpayment_status": 6,
+    "payment_status_name": "POD Pending",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900c0e",
+    "idpayment_status": 3,
+    "payment_status_name": "Refund",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900c10",
+    "idpayment_status": 5,
+    "payment_status_name": "In Settlement",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900c0c",
+    "idpayment_status": 1,
+    "payment_status_name": "Pending",
+    "project_code": "RET5677",
+    "__v": 0
+  }
+]

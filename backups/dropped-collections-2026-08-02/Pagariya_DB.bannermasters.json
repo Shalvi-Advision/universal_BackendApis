@@ -1,0 +1,62 @@
+[
+  {
+    "_id": "6a3ba28b2c9b0506f3900b73",
+    "redirect_link": "/",
+    "banner_img": "https://pagariya.viabletechsystem.com/mgmt_panel/sites/pagariya/files/banner_mgmt/banners/banner_for_mobile/Cuddle_Corner_1.jpg",
+    "is_active": "Enabled",
+    "banner_type_id": 4,
+    "sequence_id": 1,
+    "store_code": "PAG001",
+    "banner_bg_color": "#fab5c2",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900b75",
+    "redirect_link": "product_details/17545",
+    "banner_img": "https://pagariya.viabletechsystem.com/mgmt_panel/sites/pagariya/files/banner_mgmt/banners/banner_for_mobile/17545.jpg",
+    "is_active": "Enabled",
+    "banner_type_id": 1,
+    "sequence_id": 1,
+    "store_code": "PAG001",
+    "banner_bg_color": "fffff",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900b76",
+    "redirect_link": "product_details/18257",
+    "banner_img": "https://pagariya.viabletechsystem.com/mgmt_panel/sites/pagariya/files/banner_mgmt/banners/banner_for_mobile/18257.jpg",
+    "is_active": "Enabled",
+    "banner_type_id": 1,
+    "sequence_id": 1,
+    "store_code": "PAG001",
+    "banner_bg_color": "fffff",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900b77",
+    "redirect_link": "product_details/21225",
+    "banner_img": "https://pagariya.viabletechsystem.com/mgmt_panel/sites/pagariya/files/banner_mgmt/banners/banner_for_mobile/21225.jpg",
+    "is_active": "Enabled",
+    "banner_type_id": 1,
+    "sequence_id": 2,
+    "store_code": "PAG001",
+    "banner_bg_color": "fffff",
+    "project_code": "RET5677",
+    "__v": 0
+  },
+  {
+    "_id": "6a3ba28b2c9b0506f3900b74",
+    "redirect_link": "/",
+    "banner_img": "https://pagariya.viabletechsystem.com/mgmt_panel/sites/pagariya/files/banner_mgmt/banners/banner_for_mobile/ganpati_bestseller_1.jpg",
+    "is_active": "Enabled",
+    "banner_type_id": 3,
+    "sequence_id": 1,
+    "store_code": "PAG001",
+    "banner_bg_color": "#faedcd",
+    "project_code": "RET5677",
+    "__v": 0
+  }
+]

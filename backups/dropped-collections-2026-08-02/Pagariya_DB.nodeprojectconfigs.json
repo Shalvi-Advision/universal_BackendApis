@@ -1,0 +1,66 @@
+[
+  {
+    "_id": "6a3ba28b2c9b0506f3900c09",
+    "bestseller_1_title": "",
+    "bestseller_2_title": "",
+    "bestseller_3_title": "Best Seller 3",
+    "bestseller_4_title": "Best Seller 4",
+    "bestseller_1_catid": "73",
+    "bestseller_2_catid": "54",
+    "bestseller_3_catid": "",
+    "bestseller_4_catid": "",
+    "popular_cat_1_catid": [
+      0
+    ],
+    "popular_cat_2_catid": [
+      34,
+      63,
+      60,
+      15,
+      40,
+      1
+    ],
+    "popular_cat_3_catid": [
+      16,
+      58,
+      57,
+      33,
+      23,
+      3
+    ],
+    "popular_cat_4_catid": [
+      8,
+      26,
+      7,
+      41,
+      20,
+      50,
+      31
+    ],
+    "popular_cat_5_catid": [
+      28,
+      32,
+      59,
+      49,
+      30,
+      37,
+      13,
+      18,
+      45
+    ],
+    "popular_cat_title_1": "Popular Category 1",
+    "popular_cat_title_2": "Pantry Picks",
+    "popular_cat_title_3": "Self Care",
+    "popular_cat_title_4": "Home & Hygiene",
+    "popular_cat_title_5": "Sip • Bite • Chill",
+    "popular_cat_1_bg_color": "",
+    "popular_cat_2_bg_color": "",
+    "popular_cat_3_bg_color": "",
+    "popular_cat_4_bg_color": "",
+    "popular_cat_5_bg_color": "",
+    "offerimageurl": "https://retailmagic.in/cdn/RET5677/popup/popup.webp",
+    "seasonal_bg": "https://retailmagic.in/cdn/RET5677/home_bg/seasonal_bg.webp",
+    "project_code": "RET5677",
+    "__v": 0
+  }
+]

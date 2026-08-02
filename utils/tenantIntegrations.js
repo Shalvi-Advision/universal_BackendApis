@@ -35,12 +35,31 @@ const loadSecrets = async (projectCode) => {
 
 const clearSecretsCache = () => secretsCache.clear();
 
+// Whether a tenant with no Razorpay pair of its own may fall back to the
+// platform's env credentials.
+//
+// This is money routing, not configuration convenience: under the fallback,
+// a client's customers pay into the PLATFORM's merchant account. Nothing in
+// the payment flow can detect that afterwards — the signature verifies, the
+// amount matches, the order is placed — and the money simply settles to the
+// wrong company, leaving a reconciliation problem nobody notices until payout.
+//
+// Off means such a tenant gets a clear 503 at checkout instead. Keep it off in
+// any deployment serving more than one client. It exists at all because
+// single-tenant installs and local dev legitimately run on env credentials.
+const allowPlatformFallback = () =>
+  process.env.ALLOW_PLATFORM_RAZORPAY_FALLBACK === 'true';
+
 /**
  * Razorpay key pair for the current tenant.
  *
  * Key id and secret are resolved as a PAIR, never mixed: a tenant key_id
  * combined with the platform secret would produce signatures that verify
  * against nothing. A tenant must configure both to be treated as configured.
+ *
+ * Credentials belong to the tenant registry (admin panel → Integrations), not
+ * to the environment. The env pair is a fallback for single-tenant and local
+ * installs, gated by ALLOW_PLATFORM_RAZORPAY_FALLBACK.
  */
 const getRazorpayCredentials = async (project) => {
   const tenant = project || getTenantProject();
@@ -62,10 +81,26 @@ const getRazorpayCredentials = async (project) => {
     if (keyId && !keySecret) {
       console.warn(
         `⚠️  Tenant ${tenant.project_code} has razorpay_key_id configured but no ` +
-        'razorpay_key_secret — falling back to the platform key pair. Set the ' +
-        'secret, or clear the key id, so both halves come from one account.'
+        'razorpay_key_secret — set the secret (admin panel → Integrations), or ' +
+        'clear the key id, so both halves come from one account.'
       );
     }
+
+    if (!allowPlatformFallback()) {
+      const error = new Error(
+        `Razorpay is not configured for project ${tenant.project_code}. ` +
+        'Set razorpay_key_id and razorpay_key_secret for this tenant, or set ' +
+        'ALLOW_PLATFORM_RAZORPAY_FALLBACK=true to use the platform account.'
+      );
+      error.statusCode = 503;
+      throw error;
+    }
+
+    console.warn(
+      `⚠️  Tenant ${tenant.project_code} has no Razorpay credentials — taking ` +
+      "payments into the PLATFORM's merchant account. This is only correct on a " +
+      'single-tenant or local install.'
+    );
   }
 
   return {
